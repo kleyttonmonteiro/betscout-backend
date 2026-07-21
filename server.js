@@ -1,4 +1,3 @@
-
 const express = require("express");
 const cors    = require("cors");
 const axios   = require("axios");
@@ -240,6 +239,38 @@ app.get('/api/live', async (req, res) => {
       return res.json({ ok: true, cached: true, stale: true, ...liveCache.data });
     }
     res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── Endpoint IA — proxy para Anthropic (resolve CORS do mobile) ─────
+app.post('/api/ai', async (req, res) => {
+  const { prompt } = req.body;
+  if (!prompt) return res.status(400).json({ ok: false, error: 'prompt obrigatório' });
+
+  const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
+  if (!ANTHROPIC_KEY) {
+    return res.status(500).json({ ok: false, error: 'ANTHROPIC_API_KEY não configurada no Railway' });
+  }
+
+  try {
+    const response = await axios.post('https://api.anthropic.com/v1/messages', {
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: prompt }],
+    }, {
+      headers: {
+        'x-api-key': ANTHROPIC_KEY,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json',
+      },
+      timeout: 30000,
+    });
+
+    const text = response.data.content?.map(c => c.text || '').join('') || '';
+    res.json({ ok: true, text });
+  } catch (err) {
+    const msg = err.response?.data?.error?.message || err.message;
+    res.status(500).json({ ok: false, error: msg });
   }
 });
 
