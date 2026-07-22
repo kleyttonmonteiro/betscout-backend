@@ -9,6 +9,10 @@
    06 Integração API-Football             14 Tratamento de erro
    07 Integração IA (Anthropic/Gemini)    15 Start do servidor
    08 Integração Telegram
+
+   ATUALIZAÇÃO: agora o /api/analyze calcula primeiro um score interno
+   (scoringService.js, sem custo) e só chama a IA externa quando o score
+   cai numa faixa duvidosa. Isso reduz bastante o consumo de créditos.
    ==========================================================================*/
 
 /* == 01. IMPORTS E CONFIGURAÇÃO INICIAL ================================== */
@@ -16,6 +20,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
+const { calcularAnalise, precisaDeIA } = require('./scoringService');
 
 /* == 02. ENV E CONSTANTES ================================================ */
 const {
@@ -352,6 +357,10 @@ function trafficLight(metrics) {
   return 'vermelho';
 }
 
+// Converte o nível de risco do motor próprio (minúsculo/acento) pro mesmo
+// padrão que a IA já usa (BAIXO/MEDIO/ALTO), pra não quebrar o frontend.
+const RISCO_MAP = { baixo: 'BAIXO', 'médio': 'MEDIO', alto: 'ALTO' };
+
 // Monta a lista final de candidatos para o frontend
 async function buildCandidates() {
   const live = await getLiveFixtures();
@@ -413,7 +422,37 @@ app.post('/api/analyze', async (req, res, next) => {
       metrics,
     };
 
-    const analysis = await analyzeWithAI(payload);
+    // ---- MOTOR DE PONTUAÇÃO PRÓPRIO (sem custo, roda sempre primeiro) ----
+    const statsParaScore = {
+      chutesGolCasa: metrics.home.chutes_no_gol,
+      chutesGolFora: metrics.away.chutes_no_gol,
+      ataquesPerigososCasa: metrics.home.ataques_perigosos,
+      ataquesPerigososFora: metrics.away.ataques_perigosos,
+      escanteiosCasa: metrics.home.escanteios,
+      escanteiosFora: metrics.away.escanteios,
+      xgCasa: metrics.home.xg,
+      xgFora: metrics.away.xg,
+    };
+    const contextoScore = { cenario: scenario, linhaAlvo: payload.lines[0], minuto: payload.minute };
+    const analisePropria = calcularAnalise(statsParaScore, contextoScore);
+
+    let analysis;
+    if (precisaDeIA(analisePropria.score_interno)) {
+      // Score em faixa duvidosa: só aqui vale gastar crédito de IA
+      analysis = await analyzeWithAI(payload);
+    } else {
+      // Score já é claro o suficiente: responde sem gastar IA nenhuma
+      analysis = {
+        provedor: 'motor_proprio',
+        veredito: analisePropria.veredito,
+        probabilidade: analisePropria.probabilidade,
+        risco: RISCO_MAP[analisePropria.nivel_risco] || String(analisePropria.nivel_risco).toUpperCase(),
+        odd_minima: analisePropria.sugestao_odd_minima,
+        linha_sugerida: analisePropria.linha_sugerida,
+        justificativa: analisePropria.justificativa,
+      };
+    }
+
     const result = { fixtureId: fx.fixture.id, jogo: `${payload.home} ${payload.goalsHome}x${payload.goalsAway} ${payload.away}`, minuto: payload.minute, cenario: scenario, semaforo: trafficLight(metrics), metricas: metrics, ...analysis };
     cacheSet(`analysis:${fixtureId}`, result, CFG.CACHE_TTL_ANALYSIS_MS);
     res.json(result);
