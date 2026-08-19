@@ -1,7 +1,7 @@
 /* ============================================================================
    ALERTA DE GOL — Backend único (server.js)
    Arquitetura em blocos:
-   01 Imports e configuração inicial      09 Persistência do histórico (/data)
+   01 Imports e configuração inicial      09 Persistência do histórico (banco)
    02 ENV e constantes                    10 Lógica de análise e semáforo
    03 Inicialização do Express            11 Rotas da API
    04 Cache em memória                    12 Frontend estático
@@ -15,19 +15,20 @@
    (scoringService.js, sem custo) e só chama a IA externa quando o score
    cai numa faixa duvidosa. Isso reduz bastante o consumo de créditos.
 
-   ATUALIZAÇÃO 2: o servidor agora também se conecta ao banco de dados
-   (arquivo db.js) e cria as tabelas de preparação (snapshots e trades).
-   Por enquanto nenhuma rota usa essas tabelas ainda — isso é só a etapa
-   de preparar o terreno pras próximas etapas do cronograma.
+   ATUALIZAÇÃO 2: o servidor se conecta ao banco de dados (arquivo db.js) e
+   cria as tabelas de preparação (snapshots e trades).
+
+   ATUALIZAÇÃO 3: o histórico de entradas (registrar entrada / ver entradas /
+   resolver GREEN-RED) deixou de ser guardado num arquivo local (que não
+   sobrevivia a reinícios no Render) e passou a ser guardado direto no banco
+   de dados, na tabela "trades" — agora é permanente de verdade.
    ==========================================================================*/
 
 /* == 01. IMPORTS E CONFIGURAÇÃO INICIAL ================================== */
 const express = require('express');
 const path = require('path');
-const fs = require('fs');
-const fsp = fs.promises;
 const { calcularAnalise, precisaDeIA } = require('./scoringService');
-const { initDb, testConnection } = require('./db');
+const { initDb, testConnection, pool } = require('./db');
 
 /* == 02. ENV E CONSTANTES ================================================ */
 const {
@@ -38,7 +39,6 @@ const {
   GEMINI_API_KEY = '',
   TELEGRAM_BOT_TOKEN = '',
   TELEGRAM_CHAT_ID = '',
-  DATA_DIR = '/data',
   ALLOWED_ORIGINS = '*',
 } = process.env;
 
@@ -291,47 +291,75 @@ async function sendTelegramSignal(entry) {
   }
 }
 
-/* == 09. PERSISTÊNCIA DO HISTÓRICO (/data) =============================== */
-const ENTRIES_FILE = path.join(DATA_DIR, 'entries.json');
-let saveQueue = Promise.resolve(); // serializa escritas (sem concorrência)
+/* == 09. PERSISTÊNCIA DO HISTÓRICO (BANCO DE DADOS) =======================
+   Antes isso era guardado num arquivo dentro do servidor (/data). No Render
+   gratuito esse arquivo não sobrevive a reinícios, então trocamos pra
+   guardar direto na tabela "trades" do banco de dados (Neon), que é
+   permanente de verdade. */
 
-async function loadEntries() {
-  try {
-    const raw = await fsp.readFile(ENTRIES_FILE, 'utf8');
-    return JSON.parse(raw);
-  } catch { return []; }
+// Converte uma linha da tabela trades pro formato que o frontend já espera
+function rowToEntry(r) {
+  return {
+    id: r.id,
+    criado_em: r.criado_em,
+    status: r.status,
+    fixtureId: r.fixture_id,
+    jogo: r.jogo,
+    minuto: r.minuto,
+    cenario: r.cenario,
+    linha: r.linha,
+    probabilidade: r.probabilidade,
+    risco: r.risco,
+    odd_minima: r.odd_minima,
+    justificativa: r.justificativa,
+    placar_final: r.placar_final,
+    resolvido_em: r.resolvido_em,
+  };
 }
 
-function saveEntries(entries) {
-  saveQueue = saveQueue.then(async () => {
-    await fsp.mkdir(DATA_DIR, { recursive: true });
-    const tmp = ENTRIES_FILE + '.tmp';
-    await fsp.writeFile(tmp, JSON.stringify(entries, null, 2));
-    await fsp.rename(tmp, ENTRIES_FILE); // escrita atômica
-  }).catch(err => log('error', `Falha ao salvar histórico: ${err.message}`));
-  return saveQueue;
+async function loadEntries() {
+  if (!pool) return [];
+  const { rows } = await pool.query('SELECT * FROM trades ORDER BY criado_em DESC');
+  return rows.map(rowToEntry);
+}
+
+async function saveEntry(entry) {
+  await pool.query(
+    `INSERT INTO trades
+       (id, fixture_id, jogo, minuto, cenario, linha, probabilidade, risco, odd_minima, justificativa, status)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [
+      entry.id, entry.fixtureId, entry.jogo, entry.minuto, entry.cenario, entry.linha,
+      entry.probabilidade, entry.risco, entry.odd_minima, entry.justificativa, entry.status,
+    ]
+  );
+}
+
+async function updateEntryResult(id, status, placarFinal) {
+  await pool.query(
+    `UPDATE trades SET status = $1, placar_final = $2, resolvido_em = now() WHERE id = $3`,
+    [status, placarFinal, id]
+  );
 }
 
 // Resolve entradas pendentes consultando o placar final (GREEN/RED)
 async function resolveEntries() {
   const entries = await loadEntries();
   const pending = entries.filter(e => e.status === 'PENDENTE');
-  if (!pending.length) return entries;
   for (const e of pending) {
     try {
       const [fx] = await apiFootball(`/fixtures?id=${e.fixtureId}`);
       if (!fx || fx.fixture.status.short !== 'FT') continue;
       const total = num(fx.goals.home) + num(fx.goals.away);
       const line = parseFloat(String(e.linha).replace(/[^\d.]/g, ''));
-      e.status = total > line ? 'GREEN' : 'RED';
-      e.placar_final = `${fx.goals.home}x${fx.goals.away}`;
-      e.resolvido_em = new Date().toISOString();
+      const status = total > line ? 'GREEN' : 'RED';
+      const placarFinal = `${fx.goals.home}x${fx.goals.away}`;
+      await updateEntryResult(e.id, status, placarFinal);
     } catch (err) {
       log('error', `Falha ao resolver entrada ${e.id}: ${err.message}`);
     }
   }
-  await saveEntries(entries);
-  return entries;
+  return loadEntries();
 }
 
 /* == 10. LÓGICA DE ANÁLISE E SEMÁFORO =================================== */
@@ -469,24 +497,21 @@ app.post('/api/analyze', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Registrar entrada (o envio automático pro Telegram foi removido — a
-// entrada agora só é salva no histórico local)
+// Registrar entrada (agora salva direto no banco de dados, de forma permanente)
 app.post('/api/entries', async (req, res, next) => {
   try {
+    if (!pool) return res.status(503).json({ erro: 'Banco de dados não configurado' });
     const b = req.body || {};
     if (!b.fixtureId || !b.linha) return res.status(400).json({ erro: 'fixtureId e linha são obrigatórios' });
-    const entries = await loadEntries();
     const entry = {
       id: Date.now().toString(36),
-      criado_em: new Date().toISOString(),
       status: 'PENDENTE',
       fixtureId: b.fixtureId, jogo: b.jogo || '', minuto: b.minuto || 0,
       cenario: b.cenario || '', linha: b.linha,
       probabilidade: b.probabilidade ?? null, risco: b.risco || '',
       odd_minima: b.odd_minima ?? null, justificativa: b.justificativa || '',
     };
-    entries.unshift(entry);
-    await saveEntries(entries);
+    await saveEntry(entry);
     res.status(201).json({ entrada: entry });
   } catch (err) { next(err); }
 });
@@ -506,8 +531,6 @@ app.use(express.static(path.join(__dirname, 'public'), { maxAge: NODE_ENV === 'p
 
 /* == 13. HEALTHCHECK ===================================================== */
 app.get('/healthcheck', async (req, res) => {
-  let dataOk = false;
-  try { await fsp.mkdir(DATA_DIR, { recursive: true }); await fsp.access(DATA_DIR); dataOk = true; } catch {}
   const dbOk = await testConnection();
   res.json({
     status: 'ok',
@@ -519,7 +542,6 @@ app.get('/healthcheck', async (req, res) => {
       anthropic: Boolean(ANTHROPIC_API_KEY),
       gemini: Boolean(GEMINI_API_KEY),
       telegram: Boolean(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID),
-      volume_data: dataOk,
       database: dbOk,
     },
     cache_itens: cache.size,
@@ -536,7 +558,7 @@ app.use((err, req, res, next) => {
 initDb().then(ok => {
   log('info', ok
     ? 'Banco de dados conectado e tabelas prontas (snapshots e trades)'
-    : 'Banco de dados não configurado ou indisponível (app continua funcionando normalmente sem ele)');
+    : 'Banco de dados não configurado ou indisponível (registro de entradas não vai funcionar até isso ser corrigido)');
 });
 
 app.listen(PORT, () => log('info', `Alerta de Gol rodando na porta ${PORT} (${NODE_ENV})`));
