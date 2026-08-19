@@ -65,6 +65,31 @@ const RULES = {
 
 const API_FOOTBALL_BASE = 'https://v3.football.api-sports.io';
 
+// Lista das competições que realmente interessam (26 no total, depois de
+// tirar Turquia e Dinamarca). Jogos de ligas fora dessa lista são
+// descartados logo na janela de tempo, antes de gastar qualquer consulta
+// extra pra descobrir o favorito.
+const LEAGUE_WHITELIST = {
+  // Inglaterra
+  39: 'Premier League', 40: 'Championship', 45: 'FA Cup',
+  // França
+  61: 'Ligue 1', 62: 'Ligue 2', 66: 'Coupe de France',
+  // Alemanha
+  78: 'Bundesliga', 79: '2. Bundesliga', 81: 'DFB Pokal',
+  // Espanha
+  140: 'La Liga', 141: 'La Liga 2', 143: 'Copa del Rey',
+  // Itália
+  135: 'Serie A (ITA)', 136: 'Serie B (ITA)', 137: 'Coppa Italia',
+  // Portugal
+  94: 'Primeira Liga', 95: 'Liga Portugal 2', 96: 'Taça de Portugal',
+  // Brasil
+  71: 'Brasileirão Série A', 72: 'Brasileirão Série B', 73: 'Copa do Brasil',
+  // Continentais
+  2: 'Champions League', 3: 'Europa League', 848: 'Conference League',
+  13: 'Copa Libertadores', 11: 'Copa Sul-Americana',
+};
+const LEAGUE_IDS = new Set(Object.keys(LEAGUE_WHITELIST).map(Number));
+
 /* == 03. INICIALIZAÇÃO DO EXPRESS ======================================== */
 const app = express();
 app.use(express.json({ limit: '200kb' }));
@@ -402,7 +427,7 @@ const RISCO_MAP = { baixo: 'BAIXO', 'médio': 'MEDIO', alto: 'ALTO' };
 // Monta a lista final de candidatos para o frontend
 async function buildCandidates() {
   const live = await getLiveFixtures();
-  const windowed = live.filter(inWindow);
+  const windowed = live.filter(inWindow).filter(fx => LEAGUE_IDS.has(fx.league.id));
   const out = [];
   for (const fx of windowed) {
     const favorite = await getFavorite(fx.fixture.id);
