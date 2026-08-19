@@ -41,7 +41,8 @@
    de nenhum jogo real ao vivo. Continua exigindo login.
 
    ATUALIZAÇÃO 7: modelo do Gemini corrigido de "gemini-2.0-flash" (esse
-   modelo foi desativado pelo Google) para "gemini-2.5-flash".
+   modelo foi desativado pelo Google) para "gemini-3.6-flash" — nome
+   confirmado pela própria resposta de erro da API do Google.
 
    ATUALIZAÇÃO 8: os erros de Anthropic/Gemini agora guardam o texto
    completo devolvido pela API no log, não só o código HTTP. Isso ajuda a
@@ -283,7 +284,7 @@ async function callAnthropic(prompt) {
 }
 
 async function callGemini(prompt) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`;
   const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
