@@ -1,13 +1,14 @@
 {
-  "name": "sinais-de-gol",
-  "version": "2.0.0",
-  "description": "Backend + frontend do app Sinais de Gol (Over ao vivo)",
+  "name": "alerta-de-gol",
+  "version": "2.1.0",
+  "description": "Backend + frontend do app Alerta de Gol (Over ao vivo)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "engines": { "node": ">=18" },
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "pg": "^8.12.0"
   }
 }
