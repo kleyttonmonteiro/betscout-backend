@@ -14,6 +14,11 @@
    ATUALIZAÇÃO: agora o /api/analyze calcula primeiro um score interno
    (scoringService.js, sem custo) e só chama a IA externa quando o score
    cai numa faixa duvidosa. Isso reduz bastante o consumo de créditos.
+
+   ATUALIZAÇÃO 2: o servidor agora também se conecta ao banco de dados
+   (arquivo db.js) e cria as tabelas de preparação (snapshots e trades).
+   Por enquanto nenhuma rota usa essas tabelas ainda — isso é só a etapa
+   de preparar o terreno pras próximas etapas do cronograma.
    ==========================================================================*/
 
 /* == 01. IMPORTS E CONFIGURAÇÃO INICIAL ================================== */
@@ -22,6 +27,7 @@ const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const { calcularAnalise, precisaDeIA } = require('./scoringService');
+const { initDb, testConnection } = require('./db');
 
 /* == 02. ENV E CONSTANTES ================================================ */
 const {
@@ -502,6 +508,7 @@ app.use(express.static(path.join(__dirname, 'public'), { maxAge: NODE_ENV === 'p
 app.get('/healthcheck', async (req, res) => {
   let dataOk = false;
   try { await fsp.mkdir(DATA_DIR, { recursive: true }); await fsp.access(DATA_DIR); dataOk = true; } catch {}
+  const dbOk = await testConnection();
   res.json({
     status: 'ok',
     ambiente: NODE_ENV,
@@ -513,6 +520,7 @@ app.get('/healthcheck', async (req, res) => {
       gemini: Boolean(GEMINI_API_KEY),
       telegram: Boolean(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID),
       volume_data: dataOk,
+      database: dbOk,
     },
     cache_itens: cache.size,
   });
@@ -525,4 +533,10 @@ app.use((err, req, res, next) => {
 });
 
 /* == 15. START DO SERVIDOR ============================================== */
+initDb().then(ok => {
+  log('info', ok
+    ? 'Banco de dados conectado e tabelas prontas (snapshots e trades)'
+    : 'Banco de dados não configurado ou indisponível (app continua funcionando normalmente sem ele)');
+});
+
 app.listen(PORT, () => log('info', `Alerta de Gol rodando na porta ${PORT} (${NODE_ENV})`));
