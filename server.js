@@ -1,5 +1,5 @@
 /* ============================================================================
-   SINAIS DE GOL — Backend único (server.js)
+   ALERTA DE GOL — Backend único (server.js)
    Arquitetura em blocos:
    01 Imports e configuração inicial      09 Persistência do histórico (/data)
    02 ENV e constantes                    10 Lógica de análise e semáforo
@@ -8,7 +8,8 @@
    05 Funções utilitárias                 13 Healthcheck
    06 Integração API-Football             14 Tratamento de erro
    07 Integração IA (Anthropic/Gemini)    15 Start do servidor
-   08 Integração Telegram
+   08 Integração Telegram (não é mais chamada automaticamente ao registrar
+      entrada — função mantida no código, disponível para uso manual futuro)
 
    ATUALIZAÇÃO: agora o /api/analyze calcula primeiro um score interno
    (scoringService.js, sem custo) e só chama a IA externa quando o score
@@ -259,7 +260,10 @@ async function analyzeWithAI(payload) {
   throw lastErr;
 }
 
-/* == 08. INTEGRAÇÃO TELEGRAM ============================================ */
+/* == 08. INTEGRAÇÃO TELEGRAM ============================================
+   Não é mais chamada automaticamente ao registrar uma entrada (removido
+   por decisão do usuário). A função continua aqui, pronta para ser
+   acionada manualmente no futuro se fizer sentido. */
 async function sendTelegramSignal(entry) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return false;
   const text =
@@ -459,7 +463,8 @@ app.post('/api/analyze', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Registrar entrada (e disparar Telegram)
+// Registrar entrada (o envio automático pro Telegram foi removido — a
+// entrada agora só é salva no histórico local)
 app.post('/api/entries', async (req, res, next) => {
   try {
     const b = req.body || {};
@@ -476,8 +481,7 @@ app.post('/api/entries', async (req, res, next) => {
     };
     entries.unshift(entry);
     await saveEntries(entries);
-    const telegram = await sendTelegramSignal(entry);
-    res.status(201).json({ entrada: entry, telegram });
+    res.status(201).json({ entrada: entry });
   } catch (err) { next(err); }
 });
 
@@ -521,4 +525,4 @@ app.use((err, req, res, next) => {
 });
 
 /* == 15. START DO SERVIDOR ============================================== */
-app.listen(PORT, () => log('info', `Sinais de Gol rodando na porta ${PORT} (${NODE_ENV})`));
+app.listen(PORT, () => log('info', `Alerta de Gol rodando na porta ${PORT} (${NODE_ENV})`));
