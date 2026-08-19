@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teste — Alerta de Gol</title>
+<style>
+  :root{--bg:#0C110E;--surface:#141B16;--line:#24312A;--text:#EDF3EE;--muted:#93A69A;--verde:#33D374;--vermelho:#F05C5C}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif;padding:20px}
+  h1{font-size:18px;margin-bottom:4px}
+  p.sub{color:var(--muted);font-size:13px;margin-bottom:20px}
+  button{display:block;width:100%;padding:14px;border:0;border-radius:11px;background:var(--verde);
+    color:#07130B;font-size:15px;font-weight:800;margin-bottom:10px}
+  button.sec{background:transparent;color:var(--verde);border:1px solid var(--verde)}
+  label{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;margin-bottom:16px}
+  pre{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:14px;
+    font-size:12px;white-space:pre-wrap;word-break:break-word;color:var(--text)}
+  .campo{margin-bottom:10px}
+  .campo b{color:var(--verde)}
+  .erro{color:var(--vermelho)}
+</style>
+</head>
+<body>
+  <h1>🧪 Teste do motor de análise</h1>
+  <p class="sub">Roda com dados inventados, sem precisar de jogo ao vivo. Usa a mesma sessão do app.</p>
+
+  <label><input type="checkbox" id="duvidoso"> Forçar chamada da IA externa (faixa duvidosa)</label>
+
+  <button id="btn-rodar">Rodar teste</button>
+  <button class="sec" id="btn-app">Voltar pro app</button>
+
+  <div id="resultado"></div>
+
+<script>
+  const TOKEN_KEY = 'alerta_gol_token';
+  const token = localStorage.getItem(TOKEN_KEY);
+  const el = document.getElementById('resultado');
+
+  document.getElementById('btn-app').addEventListener('click', () => location.href = '/');
+
+  document.getElementById('btn-rodar').addEventListener('click', async () => {
+    if (!token) {
+      el.innerHTML = '<p class="erro">Não achei sua sessão salva. Volte pro app, faça login lá primeiro, depois volte aqui.</p>';
+      return;
+    }
+    const duvidoso = document.getElementById('duvidoso').checked;
+    el.innerHTML = '<p>Rodando…</p>';
+    try {
+      const res = await fetch('/api/test-analyze' + (duvidoso ? '?duvidoso=1' : ''), {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        el.innerHTML = `<p class="erro">Erro: ${data.erro || res.status}</p>`;
+        return;
+      }
+      const linha = (label, valor) => `<div class="campo"><b>${label}:</b> ${valor ?? '(vazio)'}</div>`;
+      el.innerHTML = `
+        ${linha('Fonte', data.provedor)}
+        ${linha('Veredito', data.veredito)}
+        ${linha('Probabilidade', data.probabilidade + '%')}
+        ${linha('Risco', data.risco)}
+        ${linha('Odd mínima', data.odd_minima)}
+        ${linha('Linha sugerida', data.linha_sugerida)}
+        ${linha('Justificativa', data.justificativa)}
+        ${linha('Janela', data.janela)}
+        ${linha('Gatilho', data.gatilho)}
+        ${linha('Invalidação', data.invalidacao)}
+        <p style="margin-top:14px;color:var(--muted);font-size:11px">JSON completo:</p>
+        <pre>${JSON.stringify(data, null, 2)}</pre>
+      `;
+    } catch (err) {
+      el.innerHTML = `<p class="erro">Falha: ${err.message}</p>`;
+    }
+  });
+</script>
+</body>
+</html>
+
