@@ -71,12 +71,36 @@
   .btn:disabled{opacity:.5}
   .btn.sec{background:transparent;color:var(--verde);border:1px solid var(--verde)}
 
-  /* Resultado da análise */
-  .analise{margin-top:12px;border-top:1px dashed var(--line);padding-top:12px;font-size:13px}
-  .analise .veredito{font-size:15px;font-weight:800;margin-bottom:6px}
-  .analise .linha-dados{display:flex;gap:14px;color:var(--muted);margin-bottom:8px;
-    font-variant-numeric:tabular-nums;flex-wrap:wrap}
-  .analise .just{line-height:1.5}
+  /* Resultado da análise — Radar: o farol de calor vem primeiro,
+     depois o veredito, depois os detalhes, um único botão no final */
+  .analise{margin-top:12px;border-radius:12px;overflow:hidden;
+    border:1px solid var(--line);font-size:13px}
+  .farol{display:flex;align-items:center;gap:10px;padding:11px 13px}
+  .farol.verde{background:rgba(51,211,116,.14)}
+  .farol.amarelo{background:rgba(245,182,63,.14)}
+  .farol.vermelho{background:rgba(240,92,92,.14)}
+  .farol .luz{width:13px;height:13px;border-radius:50%;flex-shrink:0}
+  .farol .luz.verde{background:var(--verde);box-shadow:0 0 10px var(--verde);animation:pulse 2s infinite}
+  .farol .luz.amarelo{background:var(--amarelo)}
+  .farol .luz.vermelho{background:var(--vermelho)}
+  .farol .leitura{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+  .farol .fonte{font-size:10px;color:var(--muted)}
+  .analise-corpo{padding:13px}
+  .veredito-linha{font-size:16px;font-weight:800;margin-bottom:12px}
+  .veredito-linha .linha-tag{font-weight:600;font-size:13px;color:var(--muted)}
+  .grade-dados{display:flex;border:1px solid var(--line);border-radius:10px;
+    overflow:hidden;margin-bottom:12px}
+  .grade-dados .item{flex:1;text-align:center;padding:9px 4px;border-right:1px solid var(--line)}
+  .grade-dados .item:last-child{border-right:0}
+  .grade-dados .item b{display:block;font-size:15px;font-variant-numeric:tabular-nums}
+  .grade-dados .item span{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .info-bloco{margin-bottom:10px;line-height:1.5}
+  .info-bloco .rotulo{font-size:10px;text-transform:uppercase;letter-spacing:.08em;
+    color:var(--verde);font-weight:700;margin-bottom:2px}
+  .info-bloco.alerta{border:1px dashed var(--vermelho);border-radius:10px;
+    padding:9px 11px;background:rgba(240,92,92,.06);margin-top:12px}
+  .info-bloco.alerta .rotulo{color:var(--vermelho)}
+  @media (prefers-reduced-motion: reduce){.farol .luz.verde{animation:none!important}}
 
   /* Entradas */
   .entrada{display:flex;justify-content:space-between;gap:10px;align-items:center}
@@ -250,17 +274,47 @@
     }).join('');
   }
 
+  const LEITURA_FAROL = { verde: 'Pressão alta', amarelo: 'Observar', vermelho: 'Jogo frio' };
+  const FONTE_LABEL = { anthropic: 'IA · Anthropic', gemini: 'IA · Gemini', motor_proprio: 'Motor próprio' };
+
   function htmlAnalise(a) {
-    const cor = a.veredito === 'ENTRAR' ? 'var(--verde)' : a.veredito === 'EVITAR' ? 'var(--vermelho)' : 'var(--amarelo)';
+    const corVeredito = a.veredito === 'ENTRAR' ? 'var(--verde)' : a.veredito === 'EVITAR' ? 'var(--vermelho)' : 'var(--amarelo)';
+    const sem = a.semaforo || 'amarelo';
     return `<div class="analise">
-      <div class="veredito" style="color:${cor}"><span class="sem ${esc(a.semaforo)}"></span>${esc(a.veredito)} · ${esc(a.linha_sugerida || '')}</div>
-      <div class="linha-dados">
-        <span>Prob. ${esc(a.probabilidade)}%</span>
-        <span>Risco ${esc(a.risco)}</span>
-        <span>Odd mín. ${esc(a.odd_minima)}</span>
+      <div class="farol ${esc(sem)}">
+        <span class="luz ${esc(sem)}"></span>
+        <div style="flex:1">
+          <div class="leitura">${esc(LEITURA_FAROL[sem] || sem)}</div>
+        </div>
+        <span class="fonte">${esc(FONTE_LABEL[a.provedor] || a.provedor || '')}</span>
       </div>
-      <div class="just">${esc(a.justificativa)}</div>
-      <button class="btn sec" data-registrar="${a.fixtureId}">Registrar entrada</button>
+      <div class="analise-corpo">
+        <div class="veredito-linha" style="color:${corVeredito}">
+          ${esc(a.veredito)} <span class="linha-tag">· ${esc(a.linha_sugerida || '')}</span>
+        </div>
+        <div class="grade-dados">
+          <div class="item"><b>${esc(a.probabilidade)}%</b><span>Confiança</span></div>
+          <div class="item"><b>${esc(a.risco)}</b><span>Risco</span></div>
+          <div class="item"><b>${esc(a.odd_minima)}</b><span>Odd mín.</span></div>
+        </div>
+        <div class="info-bloco">
+          <div class="rotulo">Janela</div>
+          ${esc(a.janela || '—')}
+        </div>
+        <div class="info-bloco">
+          <div class="rotulo">Gatilho</div>
+          ${esc(a.gatilho || '—')}
+        </div>
+        <div class="info-bloco">
+          <div class="rotulo">Por quê</div>
+          ${esc(a.justificativa)}
+        </div>
+        <div class="info-bloco alerta">
+          <div class="rotulo">Invalidar sinal se</div>
+          ${esc(a.invalidacao || '—')}
+        </div>
+        <button class="btn sec" data-registrar="${a.fixtureId}">Registrar entrada</button>
+      </div>
     </div>`;
   }
 
