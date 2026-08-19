@@ -28,6 +28,18 @@
    senha. Sem isso, qualquer pessoa com o link do app conseguia ver e mexer
    nos seus dados. O /healthcheck continua público de propósito, pra o
    UptimeRobot conseguir pingar sem precisar de senha.
+
+   ATUALIZAÇÃO 5 (Fase 3 — novo contrato de resposta da IA): tanto o motor
+   próprio (scoringService.js) quanto a IA externa agora sempre devolvem
+   também "janela" (por quanto tempo o sinal vale), "gatilho" (o que
+   disparou o sinal) e "invalidacao" (quando descartar o sinal), além dos
+   campos que já existiam. Isso prepara o terreno pro card novo do Radar
+   (Fase 2), que ainda vai ser feito.
+
+   ATUALIZAÇÃO 6: rota de teste /api/test-analyze — roda o motor de análise
+   com estatísticas inventadas, pra conferir o contrato novo sem precisar
+   de nenhum jogo real ao vivo. Continua exigindo login. Pode ficar no
+   código sem problema, ela não interfere em nada da parte real do app.
    ==========================================================================*/
 
 /* == 01. IMPORTS E CONFIGURAÇÃO INICIAL ================================== */
@@ -227,7 +239,7 @@ function extractMetrics(statsResponse) {
 function buildPrompt(payload) {
   return `Você é um analista de apostas ao vivo especializado em mercados de gols (Over).
 Analise o jogo abaixo e responda SOMENTE com JSON válido, sem markdown, no formato:
-{"veredito":"ENTRAR|AGUARDAR|EVITAR","probabilidade":0-100,"risco":"BAIXO|MEDIO|ALTO","odd_minima":numero,"linha_sugerida":"texto","justificativa":"texto curto"}
+{"veredito":"ENTRAR|AGUARDAR|EVITAR","probabilidade":0-100,"risco":"BAIXO|MEDIO|ALTO","odd_minima":numero,"linha_sugerida":"texto","justificativa":"texto curto","janela":"texto curto dizendo por quanto tempo esse sinal ainda vale (ex: Próximos 8 minutos (72'-80'))","gatilho":"texto curto dizendo qual foi o principal fator estatístico que motivou esse veredito","invalidacao":"texto curto dizendo em que situação esse sinal deve ser descartado"}
 
 Jogo: ${payload.home} ${payload.goalsHome} x ${payload.goalsAway} ${payload.away} — ${payload.minute}' (${payload.half}º tempo)
 Cenário: ${payload.scenario} | Favorito: ${payload.favoriteName || 'indefinido'} (odd pré ${payload.favoriteOdd || 'n/d'})
@@ -541,6 +553,11 @@ app.post('/api/analyze', async (req, res, next) => {
     if (precisaDeIA(analisePropria.score_interno)) {
       // Score em faixa duvidosa: só aqui vale gastar crédito de IA
       analysis = await analyzeWithAI(payload);
+      // Rede de segurança: se a IA esquecer algum campo novo do contrato,
+      // usa um valor padrão em vez de deixar o frontend quebrado.
+      analysis.janela = analysis.janela || 'Não informado';
+      analysis.gatilho = analysis.gatilho || analysis.justificativa || 'Não informado';
+      analysis.invalidacao = analysis.invalidacao || 'Reavalie se a pressão cair nos próximos minutos.';
     } else {
       // Score já é claro o suficiente: responde sem gastar IA nenhuma
       analysis = {
@@ -551,12 +568,71 @@ app.post('/api/analyze', async (req, res, next) => {
         odd_minima: analisePropria.sugestao_odd_minima,
         linha_sugerida: analisePropria.linha_sugerida,
         justificativa: analisePropria.justificativa,
+        janela: analisePropria.janela,
+        gatilho: analisePropria.gatilho,
+        invalidacao: analisePropria.invalidacao,
       };
     }
 
     const result = { fixtureId: fx.fixture.id, jogo: `${payload.home} ${payload.goalsHome}x${payload.goalsAway} ${payload.away}`, minuto: payload.minute, cenario: scenario, semaforo: trafficLight(metrics), metricas: metrics, ...analysis };
     cacheSet(`analysis:${fixtureId}`, result, CFG.CACHE_TTL_ANALYSIS_MS);
     res.json(result);
+  } catch (err) { next(err); }
+});
+
+// ---- Rota de TESTE (temporária): roda o motor de análise com estatísticas
+// inventadas, sem precisar de nenhum jogo real ao vivo. Continua exigindo
+// login (está depois da trava /api). Use ?duvidoso=1 pra forçar o caminho
+// que chama a IA externa em vez do motor próprio. ----
+app.get('/api/test-analyze', async (req, res, next) => {
+  try {
+    const statsParaScore = req.query.duvidoso
+      ? { // score no meio do caminho: cai na faixa duvidosa e chama a IA de verdade
+          chutesGolCasa: 2, chutesGolFora: 2,
+          ataquesPerigososCasa: 25, ataquesPerigososFora: 25,
+          escanteiosCasa: 2, escanteiosFora: 2,
+          xgCasa: 0.6, xgFora: 0.6,
+        }
+      : { // score claramente alto: motor próprio resolve sozinho, sem gastar IA
+          chutesGolCasa: 4, chutesGolFora: 3,
+          ataquesPerigososCasa: 55, ataquesPerigososFora: 40,
+          escanteiosCasa: 4, escanteiosFora: 3,
+          xgCasa: 0.9, xgFora: 0.7,
+        };
+    const contextoScore = { cenario: '0x0', linhaAlvo: 'Over 1.5', minuto: 72 };
+    const analisePropria = calcularAnalise(statsParaScore, contextoScore);
+
+    let analysis;
+    if (precisaDeIA(analisePropria.score_interno)) {
+      analysis = await analyzeWithAI({
+        home: 'Time Teste Casa', away: 'Time Teste Fora',
+        goalsHome: 0, goalsAway: 0, minute: 72, half: 2,
+        scenario: '0x0', lines: ['Over 1.5', 'Over 2.5'],
+        favoriteName: 'Time Teste Casa', favoriteOdd: 1.45,
+        metrics: {
+          home: { chutes_no_gol: statsParaScore.chutesGolCasa, chutes_total: 8, ataques_perigosos: statsParaScore.ataquesPerigososCasa, escanteios: statsParaScore.escanteiosCasa, posse: 55, xg: statsParaScore.xgCasa },
+          away: { chutes_no_gol: statsParaScore.chutesGolFora, chutes_total: 6, ataques_perigosos: statsParaScore.ataquesPerigososFora, escanteios: statsParaScore.escanteiosFora, posse: 45, xg: statsParaScore.xgFora },
+        },
+      });
+      analysis.janela = analysis.janela || 'Não informado';
+      analysis.gatilho = analysis.gatilho || analysis.justificativa || 'Não informado';
+      analysis.invalidacao = analysis.invalidacao || 'Reavalie se a pressão cair nos próximos minutos.';
+    } else {
+      analysis = {
+        provedor: 'motor_proprio',
+        veredito: analisePropria.veredito,
+        probabilidade: analisePropria.probabilidade,
+        risco: RISCO_MAP[analisePropria.nivel_risco] || String(analisePropria.nivel_risco).toUpperCase(),
+        odd_minima: analisePropria.sugestao_odd_minima,
+        linha_sugerida: analisePropria.linha_sugerida,
+        justificativa: analisePropria.justificativa,
+        janela: analisePropria.janela,
+        gatilho: analisePropria.gatilho,
+        invalidacao: analisePropria.invalidacao,
+      };
+    }
+
+    res.json({ aviso: 'SIMULAÇÃO DE TESTE — dados inventados, não é um jogo real', ...analysis });
   } catch (err) { next(err); }
 });
 
