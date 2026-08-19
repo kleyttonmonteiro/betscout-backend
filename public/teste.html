@@ -19,6 +19,7 @@
   .campo{margin-bottom:10px}
   .campo b{color:var(--verde)}
   .erro{color:var(--vermelho)}
+  .erro b{color:var(--vermelho)}
 </style>
 </head>
 <body>
@@ -52,7 +53,8 @@
       });
       const data = await res.json();
       if (!res.ok) {
-        el.innerHTML = `<p class="erro">Erro: ${data.erro || res.status}</p>`;
+        el.innerHTML = `<p class="erro"><b>Erro (${res.status}):</b> ${data.erro || 'desconhecido'}</p>
+          <p class="erro" style="margin-top:8px"><b>Detalhe:</b> ${data.detalhe || '(sem detalhe)'}</p>`;
         return;
       }
       const linha = (label, valor) => `<div class="campo"><b>${label}:</b> ${valor ?? '(vazio)'}</div>`;
@@ -77,4 +79,3 @@
 </script>
 </body>
 </html>
-
