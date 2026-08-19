@@ -102,6 +102,25 @@
   .info-bloco.alerta .rotulo{color:var(--vermelho)}
   @media (prefers-reduced-motion: reduce){.farol .luz.verde{animation:none!important}}
 
+  /* Aviso de cota da API-Football esgotada */
+  #quota-aviso{display:none;background:rgba(245,182,63,.14);border:1px solid var(--amarelo);
+    border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:13px;line-height:1.5}
+  #quota-aviso.on{display:block}
+  #quota-aviso b{color:var(--amarelo)}
+  #quota-aviso a{color:var(--verde);font-weight:700;text-decoration:underline;cursor:pointer}
+
+  /* Aba Manual */
+  .links-externos{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .link-ext{flex:1;min-width:100px;text-align:center;padding:10px 8px;border-radius:11px;
+    border:1px solid var(--line);color:var(--text);text-decoration:none;font-size:12px;
+    font-weight:700;background:var(--bg)}
+  .form-manual label{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;
+    letter-spacing:.06em;margin:12px 0 5px}
+  .form-manual .par{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .form-manual input,.form-manual select{width:100%;padding:11px;border-radius:10px;
+    border:1px solid var(--line);background:var(--bg);color:var(--text);font-size:14px}
+  .form-manual input:focus,.form-manual select:focus{outline:none;border-color:var(--verde)}
+
   /* Entradas */
   .entrada{display:flex;justify-content:space-between;gap:10px;align-items:center}
   .badge{font-size:11px;font-weight:800;padding:4px 10px;border-radius:99px}
@@ -143,12 +162,69 @@
 
 <main>
   <section id="tab-jogos" class="tab on">
+    <div id="quota-aviso"></div>
     <div id="lista-jogos"><div class="vazio">Buscando jogos ao vivo…</div></div>
   </section>
 
   <section id="tab-entradas" class="tab">
     <button class="btn sec" id="btn-resolver" style="margin:0 0 12px">Resolver GREEN / RED</button>
     <div id="lista-entradas"><div class="vazio">Nenhuma entrada registrada ainda.</div></div>
+  </section>
+
+  <section id="tab-manual" class="tab">
+    <div class="card">
+      <div class="liga"><span>MODO MANUAL</span></div>
+      <p style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:12px">
+        Use quando a cota diária da API-Football estourar. Abra um dos sites, veja os números do jogo ao vivo, e digite aqui — o motor analisa com as mesmas regras de sempre.
+      </p>
+      <div class="links-externos">
+        <a class="link-ext" href="https://www.sofascore.com/football" target="_blank" rel="noopener">SofaScore ↗</a>
+        <a class="link-ext" href="https://www.flashscore.com.br/" target="_blank" rel="noopener">Flashscore ↗</a>
+        <a class="link-ext" href="https://www.statscore.com/pt-br/futebol/" target="_blank" rel="noopener">STATSCORE ↗</a>
+      </div>
+
+      <form class="form-manual" id="form-manual">
+        <label>Jogo (Time A x Time B)</label>
+        <input type="text" id="m-jogo" placeholder="Flamengo x Palmeiras" required>
+
+        <div class="par">
+          <div><label>Minuto</label><input type="number" id="m-minuto" min="0" max="120" required></div>
+          <div><label>Favorito</label>
+            <select id="m-favorito">
+              <option value="">Nenhum / não sei</option>
+              <option value="casa">Time de casa</option>
+              <option value="fora">Time de fora</option>
+            </select>
+          </div>
+        </div>
+        <div class="par">
+          <div><label>Placar casa</label><input type="number" id="m-placar-casa" min="0" required></div>
+          <div><label>Placar fora</label><input type="number" id="m-placar-fora" min="0" required></div>
+        </div>
+        <label>Odd do favorito (opcional)</label>
+        <input type="number" id="m-favorito-odd" min="1" step="0.01" placeholder="1.45">
+
+        <div class="par">
+          <div><label>Chutes no gol — casa</label><input type="number" id="m-chutes-casa" min="0" value="0"></div>
+          <div><label>Chutes no gol — fora</label><input type="number" id="m-chutes-fora" min="0" value="0"></div>
+        </div>
+        <div class="par">
+          <div><label>Ataques perigosos — casa</label><input type="number" id="m-ap-casa" min="0" value="0"></div>
+          <div><label>Ataques perigosos — fora</label><input type="number" id="m-ap-fora" min="0" value="0"></div>
+        </div>
+        <div class="par">
+          <div><label>Escanteios — casa</label><input type="number" id="m-esc-casa" min="0" value="0"></div>
+          <div><label>Escanteios — fora</label><input type="number" id="m-esc-fora" min="0" value="0"></div>
+        </div>
+        <div class="par">
+          <div><label>xG — casa (opcional)</label><input type="number" id="m-xg-casa" min="0" step="0.01" value="0"></div>
+          <div><label>xG — fora (opcional)</label><input type="number" id="m-xg-fora" min="0" step="0.01" value="0"></div>
+        </div>
+
+        <button class="btn" type="submit" id="btn-manual" style="margin-top:16px">Analisar manualmente</button>
+      </form>
+      <div id="resultado-manual" style="margin-top:6px"></div>
+    </div>
   </section>
 
   <section id="tab-log" class="tab">
@@ -159,6 +235,7 @@
 <nav>
   <button data-tab="jogos" class="on">Jogos</button>
   <button data-tab="entradas">Entradas</button>
+  <button data-tab="manual">Manual</button>
   <button data-tab="log">Log</button>
 </nav>
 
@@ -169,6 +246,7 @@
   const $ = s => document.querySelector(s);
   const analises = {}; // fixtureId -> análise recebida
   let jogos = [];
+  let ultimaAnaliseManual = null;
 
   /* ---------- Login / token ---------- */
   const getToken = () => localStorage.getItem(TOKEN_KEY);
@@ -239,11 +317,25 @@
       const data = await api('/api/games');
       jogos = data.jogos || [];
       $('#status-txt').textContent = jogos.length + ' jogo(s) · ' + hora(data.atualizado_em);
+      atualizarQuota(data.quota);
       renderJogos();
     } catch (e) {
       if (e.message !== 'Não autenticado') $('#status-txt').textContent = 'falha ao atualizar';
     }
   }
+
+  function atualizarQuota(quota) {
+    const el = $('#quota-aviso');
+    if (quota && quota.esgotada) {
+      el.classList.add('on');
+      el.innerHTML = '<b>Cota diária da API-Football esgotada.</b> Os jogos ao vivo não atualizam até renovar (geralmente à meia-noite UTC). Use a aba <a data-ir-manual>Manual</a> pra continuar analisando com dados digitados.';
+    } else {
+      el.classList.remove('on');
+    }
+  }
+  $('#quota-aviso').addEventListener('click', e => {
+    if (e.target.closest('[data-ir-manual]')) document.querySelector('nav button[data-tab="manual"]').click();
+  });
 
   function renderJogos() {
     const el = $('#lista-jogos');
@@ -318,6 +410,24 @@
     </div>`;
   }
 
+  async function registrarEntrada(a, btn) {
+    btn.disabled = true; btn.textContent = 'Registrando…';
+    try {
+      await api('/api/entries', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          fixtureId: a.fixtureId, jogo: a.jogo, minuto: a.minuto, cenario: a.cenario,
+          linha: a.linha_sugerida, probabilidade: a.probabilidade, risco: a.risco,
+          odd_minima: a.odd_minima, justificativa: a.justificativa
+        })
+      });
+      btn.textContent = 'Registrada ✓';
+    } catch (err) {
+      btn.disabled = false; btn.textContent = 'Registrar entrada';
+      if (err.message !== 'Não autenticado') alert('Falha ao registrar: ' + err.message);
+    }
+  }
+
   /* ---------- Ações nos cards (delegação) ---------- */
   $('#lista-jogos').addEventListener('click', async e => {
     const btnA = e.target.closest('[data-analisar]');
@@ -340,23 +450,45 @@
 
     if (btnR) {
       const a = analises[btnR.dataset.registrar];
-      if (!a) return;
-      btnR.disabled = true; btnR.textContent = 'Registrando…';
-      try {
-        await api('/api/entries', {
-          method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({
-            fixtureId: a.fixtureId, jogo: a.jogo, minuto: a.minuto, cenario: a.cenario,
-            linha: a.linha_sugerida, probabilidade: a.probabilidade, risco: a.risco,
-            odd_minima: a.odd_minima, justificativa: a.justificativa
-          })
-        });
-        btnR.textContent = 'Registrada ✓';
-      } catch (err) {
-        btnR.disabled = false; btnR.textContent = 'Registrar entrada';
-        if (err.message !== 'Não autenticado') alert('Falha ao registrar: ' + err.message);
-      }
+      if (a) registrarEntrada(a, btnR);
     }
+  });
+
+  /* ---------- Modo manual (quando a API-Football estoura a cota) ---------- */
+  $('#form-manual').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = $('#btn-manual');
+    const elR = $('#resultado-manual');
+    btn.disabled = true; btn.textContent = 'Analisando…';
+    elR.innerHTML = '';
+    try {
+      const corpo = {
+        jogo: $('#m-jogo').value,
+        minuto: $('#m-minuto').value,
+        placarCasa: $('#m-placar-casa').value,
+        placarFora: $('#m-placar-fora').value,
+        favoritoLado: $('#m-favorito').value,
+        favoritoOdd: $('#m-favorito-odd').value,
+        chutesGolCasa: $('#m-chutes-casa').value, chutesGolFora: $('#m-chutes-fora').value,
+        ataquesPerigososCasa: $('#m-ap-casa').value, ataquesPerigososFora: $('#m-ap-fora').value,
+        escanteiosCasa: $('#m-esc-casa').value, escanteiosFora: $('#m-esc-fora').value,
+        xgCasa: $('#m-xg-casa').value, xgFora: $('#m-xg-fora').value,
+      };
+      ultimaAnaliseManual = await api('/api/analyze-manual', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(corpo)
+      });
+      elR.innerHTML = htmlAnalise(ultimaAnaliseManual);
+    } catch (err) {
+      if (err.message !== 'Não autenticado') {
+        elR.innerHTML = `<div class="info-bloco alerta"><div class="rotulo">Não deu pra analisar</div>${esc(err.message)}</div>`;
+      }
+    } finally {
+      btn.disabled = false; btn.textContent = 'Analisar manualmente';
+    }
+  });
+  $('#resultado-manual').addEventListener('click', e => {
+    const btnR = e.target.closest('[data-registrar]');
+    if (btnR && ultimaAnaliseManual) registrarEntrada(ultimaAnaliseManual, btnR);
   });
 
   /* ---------- Entradas ---------- */
