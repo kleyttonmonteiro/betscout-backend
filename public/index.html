@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0C110E">
-<title>Sinais de Gol</title>
+<title>Alerta de Gol</title>
 <link rel="manifest" href="manifest.json">
 <style>
   :root{
@@ -92,7 +92,7 @@
 <body>
 
 <header>
-  <h1>Sinais<span>&nbsp;de&nbsp;Gol</span></h1>
+  <h1>Alerta<span>&nbsp;de&nbsp;Gol</span></h1>
   <div id="status"><span class="dot"></span><span id="status-txt">carregando…</span></div>
 </header>
 
@@ -194,7 +194,7 @@
         <span>Odd mín. ${esc(a.odd_minima)}</span>
       </div>
       <div class="just">${esc(a.justificativa)}</div>
-      <button class="btn sec" data-registrar="${a.fixtureId}">Registrar entrada + Telegram</button>
+      <button class="btn sec" data-registrar="${a.fixtureId}">Registrar entrada</button>
     </div>`;
   }
 
@@ -223,7 +223,7 @@
       if (!a) return;
       btnR.disabled = true; btnR.textContent = 'Registrando…';
       try {
-        const r = await api('/api/entries', {
+        await api('/api/entries', {
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify({
             fixtureId: a.fixtureId, jogo: a.jogo, minuto: a.minuto, cenario: a.cenario,
@@ -231,9 +231,9 @@
             odd_minima: a.odd_minima, justificativa: a.justificativa
           })
         });
-        btnR.textContent = r.telegram ? 'Registrada ✓ Telegram enviado' : 'Registrada ✓';
+        btnR.textContent = 'Registrada ✓';
       } catch (err) {
-        btnR.disabled = false; btnR.textContent = 'Registrar entrada + Telegram';
+        btnR.disabled = false; btnR.textContent = 'Registrar entrada';
         alert('Falha ao registrar: ' + err.message);
       }
     }
@@ -283,4 +283,3 @@
 </script>
 </body>
 </html>
-
