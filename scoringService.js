@@ -1,5 +1,5 @@
 // src/services/scoringService.js
-// Motor de pontuação própria do Sinais de Gol.
+// Motor de pontuação própria do Sinais de Gol / Alerta de Gol.
 // Calcula probabilidade, veredito e odd mínima direto das estatísticas
 // ao vivo, sem depender de IA externa (Anthropic/Gemini).
 //
@@ -7,6 +7,12 @@
 // Só cair para a IA externa quando o score ficar na "faixa duvidosa"
 // (ver FAIXA_DUVIDOSA no final do arquivo) — assim você reduz o consumo
 // de créditos/cota drasticamente, mantendo a IA como reforço, não regra.
+//
+// ATUALIZAÇÃO (Fase 3 — novo contrato de resposta): além de veredito,
+// probabilidade, risco, odd mínima e justificativa, agora também calcula:
+// - janela: por quanto tempo esse sinal ainda vale a pena ser considerado
+// - gatilho: qual foi o principal fator estatístico que disparou o sinal
+// - invalidacao: em que situação o sinal deve ser descartado
 
 // ===== PESOS (ajustáveis conforme você calibrar com o histórico real) =====
 const PESOS = {
@@ -103,6 +109,42 @@ function gerarJustificativa(detalhes, contexto, veredito) {
   return `Poucos sinais de pressão (${base}). Cenário não sustenta o mercado ${contexto.linhaAlvo} no momento.`;
 }
 
+// Identifica qual foi o principal fator (o de maior peso já normalizado)
+// que puxou o score pra cima — é isso que vira o "gatilho" do sinal.
+function gerarGatilho(detalhes, contexto) {
+  const contribuicoes = [
+    { nome: `Chutes no gol (${detalhes.chutesGolTotal} somados)`, peso: detalhes.scoreChutes },
+    { nome: `Ataques perigosos (${detalhes.apTotal} somados)`, peso: detalhes.scoreAP },
+    { nome: `Escanteios (${detalhes.escanteiosTotal} somados)`, peso: detalhes.scoreEscanteios },
+    { nome: `xG combinado (${detalhes.xgTotal.toFixed(2)})`, peso: detalhes.scoreXg },
+  ];
+  contribuicoes.sort((a, b) => b.peso - a.peso);
+  const principal = contribuicoes[0];
+  if (principal.peso <= 0) return `Cenário ${contexto.cenario}, mas sem pressão estatística clara ainda`;
+  return `${principal.nome} + cenário ${contexto.cenario}`;
+}
+
+// Por quanto tempo esse sinal ainda faz sentido ser considerado.
+// Sinais fortes (score alto) valem uma janela um pouco mais larga.
+function calcularJanela(contexto, scoreFinal) {
+  const minuto = contexto.minuto || 45;
+  const largura = scoreFinal >= 70 ? 10 : 7;
+  const fim = Math.min(90, minuto + largura);
+  if (fim - minuto <= 3) return `Até o fim do jogo (${minuto}'–90')`;
+  return `Próximos ${fim - minuto} minutos (${minuto}'–${fim}')`;
+}
+
+// Em que situação esse sinal deve ser considerado "furado" e descartado.
+function gerarInvalidacao(veredito, contexto) {
+  if (veredito === 'ENTRAR') {
+    return `Perde valor se o jogo ficar uns 10 minutos seguidos sem nenhuma finalização, ou se o placar sair do cenário ${contexto.cenario}.`;
+  }
+  if (veredito === 'AGUARDAR') {
+    return `Descarte se a pressão cair (menos finalizações/ataques) nos próximos minutos, ou se o placar sair do cenário ${contexto.cenario}.`;
+  }
+  return `Só reconsidere se a pressão aumentar bastante nos próximos minutos.`;
+}
+
 /**
  * Função principal: calcula a análise sem chamar nenhuma IA externa.
  * @param {object} stats - { chutesGolCasa, chutesGolFora, ataquesPerigososCasa,
@@ -122,6 +164,9 @@ function calcularAnalise(stats, contexto) {
     sugestao_odd_minima: calcularOddMinima(probabilidadeArredondada),
     linha_sugerida: contexto.linhaAlvo,
     justificativa: gerarJustificativa(detalhes, contexto, veredito),
+    janela: calcularJanela(contexto, scoreFinal),
+    gatilho: gerarGatilho(detalhes, contexto),
+    invalidacao: gerarInvalidacao(veredito, contexto),
     score_interno: scoreFinal,
     fonte: 'motor_proprio', // diferencia no log/histórico: motor_proprio vs anthropic vs gemini
   };
