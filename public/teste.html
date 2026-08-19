@@ -20,6 +20,10 @@
   .campo b{color:var(--verde)}
   .erro{color:var(--vermelho)}
   .erro b{color:var(--vermelho)}
+  .logline{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--muted);
+    padding:6px 0;border-bottom:1px solid var(--line);word-break:break-word}
+  .logline.error{color:var(--vermelho)}
+  hr{border:0;border-top:1px solid var(--line);margin:20px 0}
 </style>
 </head>
 <body>
@@ -33,10 +37,15 @@
 
   <div id="resultado"></div>
 
+  <hr>
+  <button class="sec" id="btn-log">Ver últimos logs do servidor</button>
+  <div id="logs"></div>
+
 <script>
   const TOKEN_KEY = 'alerta_gol_token';
   const token = localStorage.getItem(TOKEN_KEY);
   const el = document.getElementById('resultado');
+  const elLog = document.getElementById('logs');
 
   document.getElementById('btn-app').addEventListener('click', () => location.href = '/');
 
@@ -74,6 +83,24 @@
       `;
     } catch (err) {
       el.innerHTML = `<p class="erro">Falha: ${err.message}</p>`;
+    }
+  });
+
+  document.getElementById('btn-log').addEventListener('click', async () => {
+    if (!token) {
+      elLog.innerHTML = '<p class="erro">Não achei sua sessão salva.</p>';
+      return;
+    }
+    elLog.innerHTML = '<p>Carregando…</p>';
+    try {
+      const res = await fetch('/api/log', { headers: { Authorization: 'Bearer ' + token } });
+      const linhas = await res.json();
+      if (!res.ok) { elLog.innerHTML = `<p class="erro">Erro ao buscar log: ${linhas.erro || res.status}</p>`; return; }
+      elLog.innerHTML = linhas.slice(0, 15).map(l =>
+        `<div class="logline ${l.level === 'error' ? 'error' : ''}">${l.ts.slice(11,19)} ${l.msg}</div>`
+      ).join('') || '<p style="color:var(--muted)">Sem logs ainda.</p>';
+    } catch (err) {
+      elLog.innerHTML = `<p class="erro">Falha: ${err.message}</p>`;
     }
   });
 </script>
