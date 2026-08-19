@@ -22,11 +22,18 @@
    resolver GREEN-RED) deixou de ser guardado num arquivo local (que não
    sobrevivia a reinícios no Render) e passou a ser guardado direto no banco
    de dados, na tabela "trades" — agora é permanente de verdade.
+
+   ATUALIZAÇÃO 4: adicionado login por senha única. Todas as rotas /api/*
+   (exceto /api/login) agora exigem um token válido, obtido ao entrar com a
+   senha. Sem isso, qualquer pessoa com o link do app conseguia ver e mexer
+   nos seus dados. O /healthcheck continua público de propósito, pra o
+   UptimeRobot conseguir pingar sem precisar de senha.
    ==========================================================================*/
 
 /* == 01. IMPORTS E CONFIGURAÇÃO INICIAL ================================== */
 const express = require('express');
 const path = require('path');
+const jwt = require('jsonwebtoken');
 const { calcularAnalise, precisaDeIA } = require('./scoringService');
 const { initDb, testConnection, pool } = require('./db');
 
@@ -40,6 +47,8 @@ const {
   TELEGRAM_BOT_TOKEN = '',
   TELEGRAM_CHAT_ID = '',
   ALLOWED_ORIGINS = '*',
+  APP_PASSWORD = '',
+  JWT_SECRET = '',
 } = process.env;
 
 // Tempos e limites centralizados (nada de números mágicos espalhados)
@@ -100,7 +109,7 @@ app.use((req, res, next) => {
   const allowed = ALLOWED_ORIGINS === '*' || ALLOWED_ORIGINS.split(',').map(s => s.trim()).includes(origin);
   if (allowed) res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGINS === '*' ? '*' : origin);
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
@@ -450,6 +459,35 @@ async function buildCandidates() {
 }
 
 /* == 11. ROTAS DA API ==================================================== */
+
+// ---- Login (fica ANTES da trava, é a única rota /api que fica aberta) ----
+app.post('/api/login', (req, res) => {
+  if (!APP_PASSWORD || !JWT_SECRET) {
+    return res.status(503).json({ erro: 'Login não configurado no servidor (faltam APP_PASSWORD/JWT_SECRET)' });
+  }
+  const { senha } = req.body || {};
+  if (senha !== APP_PASSWORD) {
+    return res.status(401).json({ erro: 'Senha incorreta' });
+  }
+  const token = jwt.sign({ ok: true }, JWT_SECRET, { expiresIn: '30d' });
+  res.json({ token });
+});
+
+// ---- Trava: a partir daqui, toda rota /api/* exige token válido ----
+function exigirLogin(req, res, next) {
+  if (!APP_PASSWORD || !JWT_SECRET) return next(); // login não configurado: não bloqueia (evita travar o app à toa)
+  const auth = req.headers.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  if (!token) return res.status(401).json({ erro: 'Faça login' });
+  try {
+    jwt.verify(token, JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ erro: 'Sessão expirada, faça login novamente' });
+  }
+}
+app.use('/api', exigirLogin);
+
 app.get('/api/games', async (req, res, next) => {
   try {
     res.json({ atualizado_em: new Date().toISOString(), jogos: await buildCandidates() });
@@ -568,6 +606,7 @@ app.get('/healthcheck', async (req, res) => {
       gemini: Boolean(GEMINI_API_KEY),
       telegram: Boolean(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID),
       database: dbOk,
+      login: Boolean(APP_PASSWORD && JWT_SECRET),
     },
     cache_itens: cache.size,
   });
@@ -585,5 +624,9 @@ initDb().then(ok => {
     ? 'Banco de dados conectado e tabelas prontas (snapshots e trades)'
     : 'Banco de dados não configurado ou indisponível (registro de entradas não vai funcionar até isso ser corrigido)');
 });
+
+if (!APP_PASSWORD || !JWT_SECRET) {
+  log('info', 'Login por senha NÃO configurado (faltam APP_PASSWORD e/ou JWT_SECRET) — app está aberto sem proteção.');
+}
 
 app.listen(PORT, () => log('info', `Alerta de Gol rodando na porta ${PORT} (${NODE_ENV})`));
