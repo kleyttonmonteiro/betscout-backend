@@ -5,49 +5,114 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Teste — Alerta de Gol</title>
 <style>
-  :root{--bg:#0C110E;--surface:#141B16;--line:#24312A;--text:#EDF3EE;--muted:#93A69A;--verde:#33D374;--vermelho:#F05C5C}
+  :root{
+    --bg:#0C110E; --surface:#141B16; --line:#24312A;
+    --text:#EDF3EE; --muted:#93A69A;
+    --verde:#33D374; --amarelo:#F5B63F; --vermelho:#F05C5C;
+  }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif;padding:20px}
   h1{font-size:18px;margin-bottom:4px}
   p.sub{color:var(--muted);font-size:13px;margin-bottom:20px}
-  button{display:block;width:100%;padding:14px;border:0;border-radius:11px;background:var(--verde);
-    color:#07130B;font-size:15px;font-weight:800;margin-bottom:10px}
-  button.sec{background:transparent;color:var(--verde);border:1px solid var(--verde)}
+  .btn{display:block;width:100%;padding:14px;border:0;border-radius:11px;background:var(--verde);
+    color:#07130B;font-size:15px;font-weight:800;margin-bottom:10px;cursor:pointer}
+  .btn.sec{background:transparent;color:var(--verde);border:1px solid var(--verde)}
   label{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;margin-bottom:16px}
   pre{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:14px;
-    font-size:12px;white-space:pre-wrap;word-break:break-word;color:var(--text)}
-  .campo{margin-bottom:10px}
-  .campo b{color:var(--verde)}
+    font-size:11px;white-space:pre-wrap;word-break:break-word;color:var(--muted)}
   .erro{color:var(--vermelho)}
   .erro b{color:var(--vermelho)}
   .logline{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--muted);
     padding:6px 0;border-bottom:1px solid var(--line);word-break:break-word}
   .logline.error{color:var(--vermelho)}
   hr{border:0;border-top:1px solid var(--line);margin:20px 0}
+  details summary{color:var(--muted);font-size:11px;cursor:pointer;margin-top:14px}
+
+  /* ---- Mesmo desenho do card de análise do app (index.html) ---- */
+  .analise{margin-top:12px;border-radius:12px;overflow:hidden;
+    border:1px solid var(--line);font-size:13px}
+  .farol{display:flex;align-items:center;gap:10px;padding:11px 13px}
+  .farol.verde{background:rgba(51,211,116,.14)}
+  .farol.amarelo{background:rgba(245,182,63,.14)}
+  .farol.vermelho{background:rgba(240,92,92,.14)}
+  .farol .luz{width:13px;height:13px;border-radius:50%;flex-shrink:0}
+  .farol .luz.verde{background:var(--verde);box-shadow:0 0 10px var(--verde);animation:pulse 2s infinite}
+  .farol .luz.amarelo{background:var(--amarelo)}
+  .farol .luz.vermelho{background:var(--vermelho)}
+  .farol .leitura{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+  .farol .fonte{font-size:10px;color:var(--muted)}
+  .analise-corpo{padding:13px;background:var(--surface)}
+  .veredito-linha{font-size:16px;font-weight:800;margin-bottom:12px}
+  .veredito-linha .linha-tag{font-weight:600;font-size:13px;color:var(--muted)}
+  .grade-dados{display:flex;border:1px solid var(--line);border-radius:10px;
+    overflow:hidden;margin-bottom:12px}
+  .grade-dados .item{flex:1;text-align:center;padding:9px 4px;border-right:1px solid var(--line)}
+  .grade-dados .item:last-child{border-right:0}
+  .grade-dados .item b{display:block;font-size:15px;font-variant-numeric:tabular-nums}
+  .grade-dados .item span{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .info-bloco{margin-bottom:10px;line-height:1.5}
+  .info-bloco .rotulo{font-size:10px;text-transform:uppercase;letter-spacing:.08em;
+    color:var(--verde);font-weight:700;margin-bottom:2px}
+  .info-bloco.alerta{border:1px dashed var(--vermelho);border-radius:10px;
+    padding:9px 11px;background:rgba(240,92,92,.06);margin-top:12px}
+  .info-bloco.alerta .rotulo{color:var(--vermelho)}
+  @keyframes pulse{50%{opacity:.35}}
 </style>
 </head>
 <body>
-  <h1>🧪 Teste do motor de análise</h1>
-  <p class="sub">Roda com dados inventados, sem precisar de jogo ao vivo. Usa a mesma sessão do app.</p>
+  <h1>🧪 Teste do card do Radar</h1>
+  <p class="sub">Mostra o card exatamente como aparece no app, com dados inventados — sem precisar de jogo ao vivo.</p>
 
   <label><input type="checkbox" id="duvidoso"> Forçar chamada da IA externa (faixa duvidosa)</label>
 
-  <button id="btn-rodar">Rodar teste</button>
-  <button class="sec" id="btn-app">Voltar pro app</button>
+  <button class="btn" id="btn-rodar">Rodar teste</button>
+  <button class="btn sec" id="btn-app">Voltar pro app</button>
 
   <div id="resultado"></div>
 
-  <hr>
-  <button class="sec" id="btn-log">Ver últimos logs do servidor</button>
-  <div id="logs"></div>
+  <details>
+    <summary>Ver logs do servidor</summary>
+    <div id="logs" style="margin-top:10px"></div>
+  </details>
 
 <script>
   const TOKEN_KEY = 'alerta_gol_token';
   const token = localStorage.getItem(TOKEN_KEY);
   const el = document.getElementById('resultado');
   const elLog = document.getElementById('logs');
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
   document.getElementById('btn-app').addEventListener('click', () => location.href = '/');
+
+  const LEITURA_FAROL = { verde: 'Pressão alta', amarelo: 'Observar', vermelho: 'Jogo frio' };
+  const FONTE_LABEL = { anthropic: 'IA · Anthropic', gemini: 'IA · Gemini', motor_proprio: 'Motor próprio' };
+
+  function htmlAnalise(a) {
+    const corVeredito = a.veredito === 'ENTRAR' ? 'var(--verde)' : a.veredito === 'EVITAR' ? 'var(--vermelho)' : 'var(--amarelo)';
+    const sem = a.semaforo || 'amarelo';
+    return `<div class="analise">
+      <div class="farol ${esc(sem)}">
+        <span class="luz ${esc(sem)}"></span>
+        <div style="flex:1"><div class="leitura">${esc(LEITURA_FAROL[sem] || sem)}</div></div>
+        <span class="fonte">${esc(FONTE_LABEL[a.provedor] || a.provedor || '')}</span>
+      </div>
+      <div class="analise-corpo">
+        <div class="veredito-linha" style="color:${corVeredito}">
+          ${esc(a.veredito)} <span class="linha-tag">· ${esc(a.linha_sugerida || '')}</span>
+        </div>
+        <div class="grade-dados">
+          <div class="item"><b>${esc(a.probabilidade)}%</b><span>Confiança</span></div>
+          <div class="item"><b>${esc(a.risco)}</b><span>Risco</span></div>
+          <div class="item"><b>${esc(a.odd_minima)}</b><span>Odd mín.</span></div>
+        </div>
+        <div class="info-bloco"><div class="rotulo">Janela</div>${esc(a.janela || '—')}</div>
+        <div class="info-bloco"><div class="rotulo">Gatilho</div>${esc(a.gatilho || '—')}</div>
+        <div class="info-bloco"><div class="rotulo">Por quê</div>${esc(a.justificativa)}</div>
+        <div class="info-bloco alerta"><div class="rotulo">Invalidar sinal se</div>${esc(a.invalidacao || '—')}</div>
+        <button class="btn sec" disabled style="opacity:.6">Registrar entrada (desativado no teste)</button>
+      </div>
+    </div>`;
+  }
 
   document.getElementById('btn-rodar').addEventListener('click', async () => {
     if (!token) {
@@ -55,52 +120,35 @@
       return;
     }
     const duvidoso = document.getElementById('duvidoso').checked;
-    el.innerHTML = '<p>Rodando…</p>';
+    el.innerHTML = '<p style="color:var(--muted)">Rodando…</p>';
     try {
       const res = await fetch('/api/test-analyze' + (duvidoso ? '?duvidoso=1' : ''), {
         headers: { Authorization: 'Bearer ' + token }
       });
       const data = await res.json();
       if (!res.ok) {
-        el.innerHTML = `<p class="erro"><b>Erro (${res.status}):</b> ${data.erro || 'desconhecido'}</p>
-          <p class="erro" style="margin-top:8px"><b>Detalhe:</b> ${data.detalhe || '(sem detalhe)'}</p>`;
+        el.innerHTML = `<p class="erro"><b>Erro (${res.status}):</b> ${esc(data.erro || 'desconhecido')}</p>
+          <p class="erro" style="margin-top:8px"><b>Detalhe:</b> ${esc(data.detalhe || '(sem detalhe)')}</p>`;
         return;
       }
-      const linha = (label, valor) => `<div class="campo"><b>${label}:</b> ${valor ?? '(vazio)'}</div>`;
-      el.innerHTML = `
-        ${linha('Fonte', data.provedor)}
-        ${linha('Veredito', data.veredito)}
-        ${linha('Probabilidade', data.probabilidade + '%')}
-        ${linha('Risco', data.risco)}
-        ${linha('Odd mínima', data.odd_minima)}
-        ${linha('Linha sugerida', data.linha_sugerida)}
-        ${linha('Justificativa', data.justificativa)}
-        ${linha('Janela', data.janela)}
-        ${linha('Gatilho', data.gatilho)}
-        ${linha('Invalidação', data.invalidacao)}
-        <p style="margin-top:14px;color:var(--muted);font-size:11px">JSON completo:</p>
-        <pre>${JSON.stringify(data, null, 2)}</pre>
-      `;
+      el.innerHTML = htmlAnalise(data) + `<details style="margin-top:14px"><summary>JSON completo</summary><pre>${esc(JSON.stringify(data, null, 2))}</pre></details>`;
     } catch (err) {
-      el.innerHTML = `<p class="erro">Falha: ${err.message}</p>`;
+      el.innerHTML = `<p class="erro">Falha: ${esc(err.message)}</p>`;
     }
   });
 
-  document.getElementById('btn-log').addEventListener('click', async () => {
-    if (!token) {
-      elLog.innerHTML = '<p class="erro">Não achei sua sessão salva.</p>';
-      return;
-    }
-    elLog.innerHTML = '<p>Carregando…</p>';
+  document.querySelector('details').addEventListener('toggle', async e => {
+    if (!e.target.open || elLog.dataset.loaded) return;
+    if (!token) { elLog.innerHTML = '<p class="erro">Sem sessão salva.</p>'; return; }
     try {
       const res = await fetch('/api/log', { headers: { Authorization: 'Bearer ' + token } });
       const linhas = await res.json();
-      if (!res.ok) { elLog.innerHTML = `<p class="erro">Erro ao buscar log: ${linhas.erro || res.status}</p>`; return; }
+      elLog.dataset.loaded = '1';
       elLog.innerHTML = linhas.slice(0, 15).map(l =>
-        `<div class="logline ${l.level === 'error' ? 'error' : ''}">${l.ts.slice(11,19)} ${l.msg}</div>`
+        `<div class="logline ${l.level === 'error' ? 'error' : ''}">${esc(l.ts.slice(11,19))} ${esc(l.msg)}</div>`
       ).join('') || '<p style="color:var(--muted)">Sem logs ainda.</p>';
     } catch (err) {
-      elLog.innerHTML = `<p class="erro">Falha: ${err.message}</p>`;
+      elLog.innerHTML = `<p class="erro">Falha: ${esc(err.message)}</p>`;
     }
   });
 </script>
