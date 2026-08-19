@@ -38,8 +38,15 @@
 
    ATUALIZAÇÃO 6: rota de teste /api/test-analyze — roda o motor de análise
    com estatísticas inventadas, pra conferir o contrato novo sem precisar
-   de nenhum jogo real ao vivo. Continua exigindo login. Pode ficar no
-   código sem problema, ela não interfere em nada da parte real do app.
+   de nenhum jogo real ao vivo. Continua exigindo login.
+
+   ATUALIZAÇÃO 7: modelo do Gemini corrigido de "gemini-2.0-flash" (esse
+   modelo foi desativado pelo Google) para "gemini-2.5-flash".
+
+   ATUALIZAÇÃO 8: os erros de Anthropic/Gemini agora guardam o texto
+   completo devolvido pela API no log, não só o código HTTP. Isso ajuda a
+   diagnosticar problemas como "chave sem crédito" ou "modelo errado" sem
+   precisar adivinhar.
    ==========================================================================*/
 
 /* == 01. IMPORTS E CONFIGURAÇÃO INICIAL ================================== */
@@ -267,19 +274,25 @@ async function callAnthropic(prompt) {
       messages: [{ role: 'user', content: prompt }],
     }),
   }, { timeoutMs: 20000, retries: 1 });
-  if (!res.ok) throw new Error(`Anthropic ${res.status}`);
+  if (!res.ok) {
+    const corpo = await res.text().catch(() => '');
+    throw new Error(`Anthropic ${res.status}: ${corpo.slice(0, 300)}`);
+  }
   const data = await res.json();
   return (data.content || []).map(c => c.text || '').join('');
 }
 
 async function callGemini(prompt) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
   const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
   }, { timeoutMs: 20000, retries: 1 });
-  if (!res.ok) throw new Error(`Gemini ${res.status}`);
+  if (!res.ok) {
+    const corpo = await res.text().catch(() => '');
+    throw new Error(`Gemini ${res.status}: ${corpo.slice(0, 300)}`);
+  }
   const data = await res.json();
   return data?.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
 }
