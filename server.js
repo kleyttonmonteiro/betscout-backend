@@ -48,6 +48,13 @@
    completo devolvido pela API no log, não só o código HTTP. Isso ajuda a
    diagnosticar problemas como "chave sem crédito" ou "modelo errado" sem
    precisar adivinhar.
+
+   ATUALIZAÇÃO 9: modo manual. Quando a cota diária da API-Football estoura,
+   /api/games detecta isso (via cabeçalho x-ratelimit e via "errors" na
+   resposta) e devolve jogos:[] + quota:{esgotada:true} em vez de dar erro.
+   O frontend mostra um aviso e libera a aba "Manual", onde dá pra digitar
+   os números do jogo (vistos em outro site) e rodar a mesma análise de
+   sempre — /api/analyze-manual usa as mesmas regras de cenário/motor/IA.
    ==========================================================================*/
 
 /* == 01. IMPORTS E CONFIGURAÇÃO INICIAL ================================== */
@@ -178,12 +185,33 @@ async function fetchWithTimeout(url, options = {}, { timeoutMs = CFG.HTTP_TIMEOU
 const num = v => (typeof v === 'string' ? parseFloat(v.replace('%', '')) : (v ?? 0)) || 0;
 
 /* == 06. INTEGRAÇÃO API-FOOTBALL ======================================== */
+// Guarda o estado da cota diária, atualizado a cada chamada real à API-Football.
+const apiFootballQuota = { remaining: null, limit: null, esgotada: false, atualizadoEm: null };
+
 async function apiFootball(pathAndQuery) {
   const res = await fetchWithTimeout(`${API_FOOTBALL_BASE}${pathAndQuery}`, {
     headers: { 'x-apisports-key': API_FOOTBALL_KEY },
   });
+  const restante = res.headers.get('x-ratelimit-requests-remaining');
+  const limite = res.headers.get('x-ratelimit-requests-limit');
+  if (restante !== null) {
+    apiFootballQuota.remaining = Number(restante);
+    apiFootballQuota.limit = limite !== null ? Number(limite) : apiFootballQuota.limit;
+    apiFootballQuota.atualizadoEm = new Date().toISOString();
+  }
   if (!res.ok) throw new Error(`API-Football ${res.status} em ${pathAndQuery}`);
   const json = await res.json();
+  // A API-Football costuma devolver HTTP 200 mesmo quando a cota estourou —
+  // o aviso vem dentro de "errors", não no status HTTP. Por isso checamos aqui.
+  const temErro = json.errors && (Array.isArray(json.errors) ? json.errors.length : Object.keys(json.errors).length);
+  if (temErro) {
+    const msg = Array.isArray(json.errors) ? json.errors.join(' | ') : Object.values(json.errors).join(' | ');
+    if (apiFootballQuota.remaining === 0 || /request|limit/i.test(msg)) {
+      apiFootballQuota.esgotada = true;
+    }
+    throw new Error(`API-Football: ${msg}`);
+  }
+  apiFootballQuota.esgotada = false;
   return json.response || [];
 }
 
@@ -516,7 +544,14 @@ app.use('/api', exigirLogin);
 
 app.get('/api/games', async (req, res, next) => {
   try {
-    res.json({ atualizado_em: new Date().toISOString(), jogos: await buildCandidates() });
+    let jogos = [];
+    try {
+      jogos = await buildCandidates();
+    } catch (err) {
+      if (!apiFootballQuota.esgotada) throw err; // erro de verdade, não é de cota — deixa estourar normal
+      log('error', `Cota da API-Football esgotada: ${err.message}`);
+    }
+    res.json({ atualizado_em: new Date().toISOString(), jogos, quota: apiFootballQuota });
   } catch (err) { next(err); }
 });
 
@@ -650,6 +685,98 @@ app.get('/api/test-analyze', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ---- Modo manual: mesma análise de sempre, mas com dados digitados por você
+// (usado quando a cota diária da API-Football estoura). Segue exatamente as
+// mesmas regras de cenário/janela — não deixa a IA decidir livre de um texto. ----
+app.post('/api/analyze-manual', async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const placarCasa = Number(b.placarCasa) || 0;
+    const placarFora = Number(b.placarFora) || 0;
+    const minuto = Number(b.minuto) || 0;
+    const favoritoOdd = b.favoritoOdd ? Number(b.favoritoOdd) : null;
+    const favoritoLado = b.favoritoLado === 'casa' ? 'home' : b.favoritoLado === 'fora' ? 'away' : null;
+    const favorite = favoritoLado
+      ? { side: favoritoLado, odd: favoritoOdd, isStrong: Boolean(favoritoOdd && favoritoOdd <= RULES.FAVORITE_MAX_ODD) }
+      : null;
+
+    const scenario = getScenario({ goals: { home: placarCasa, away: placarFora } }, favorite);
+    if (!scenario) {
+      return res.status(400).json({
+        erro: `Cenário ${placarCasa}x${placarFora} está fora dos critérios do funil (só 0x0, favorito perdendo 0x1, ou 1x1). Nenhum sinal gerado — isso é esperado, não é um bug.`,
+      });
+    }
+
+    const metrics = {
+      home: {
+        chutes_no_gol: Number(b.chutesGolCasa) || 0, chutes_total: 0,
+        ataques_perigosos: Number(b.ataquesPerigososCasa) || 0,
+        escanteios: Number(b.escanteiosCasa) || 0, posse: 0,
+        xg: Number(b.xgCasa) || 0,
+      },
+      away: {
+        chutes_no_gol: Number(b.chutesGolFora) || 0, chutes_total: 0,
+        ataques_perigosos: Number(b.ataquesPerigososFora) || 0,
+        escanteios: Number(b.escanteiosFora) || 0, posse: 0,
+        xg: Number(b.xgFora) || 0,
+      },
+    };
+
+    const lines = RULES.LINES[scenario] || [];
+    const [homeNome, foraNome] = String(b.jogo || 'Casa x Fora').split(/\s+x\s+/i);
+
+    const payload = {
+      home: homeNome || 'Casa', away: foraNome || 'Fora',
+      goalsHome: placarCasa, goalsAway: placarFora,
+      minute: minuto, half: minuto > 45 ? 2 : 1,
+      scenario, lines,
+      favoriteName: favorite ? (favorite.side === 'home' ? (homeNome || 'Casa') : (foraNome || 'Fora')) : null,
+      favoriteOdd: favorite?.odd || null,
+      metrics,
+    };
+
+    const statsParaScore = {
+      chutesGolCasa: metrics.home.chutes_no_gol, chutesGolFora: metrics.away.chutes_no_gol,
+      ataquesPerigososCasa: metrics.home.ataques_perigosos, ataquesPerigososFora: metrics.away.ataques_perigosos,
+      escanteiosCasa: metrics.home.escanteios, escanteiosFora: metrics.away.escanteios,
+      xgCasa: metrics.home.xg, xgFora: metrics.away.xg,
+    };
+    const contextoScore = { cenario: scenario, linhaAlvo: lines[0], minuto };
+    const analisePropria = calcularAnalise(statsParaScore, contextoScore);
+
+    let analysis;
+    if (precisaDeIA(analisePropria.score_interno)) {
+      analysis = await analyzeWithAI(payload);
+      analysis.janela = analysis.janela || 'Não informado';
+      analysis.gatilho = analysis.gatilho || analysis.justificativa || 'Não informado';
+      analysis.invalidacao = analysis.invalidacao || 'Reavalie se a pressão cair nos próximos minutos.';
+    } else {
+      analysis = {
+        provedor: 'motor_proprio',
+        veredito: analisePropria.veredito,
+        probabilidade: analisePropria.probabilidade,
+        risco: RISCO_MAP[analisePropria.nivel_risco] || String(analisePropria.nivel_risco).toUpperCase(),
+        odd_minima: analisePropria.sugestao_odd_minima,
+        linha_sugerida: analisePropria.linha_sugerida,
+        justificativa: analisePropria.justificativa,
+        janela: analisePropria.janela,
+        gatilho: analisePropria.gatilho,
+        invalidacao: analisePropria.invalidacao,
+      };
+    }
+
+    const fixtureIdFalso = -Date.now(); // negativo: nunca colide com um ID real da API-Football
+    res.json({
+      fixtureId: fixtureIdFalso,
+      manual: true,
+      jogo: `${payload.home} ${placarCasa}x${placarFora} ${payload.away}`,
+      minuto, cenario: scenario,
+      semaforo: trafficLight(metrics), metricas: metrics,
+      ...analysis,
+    });
+  } catch (err) { next(err); }
+});
+
 // Registrar entrada (agora salva direto no banco de dados, de forma permanente)
 app.post('/api/entries', async (req, res, next) => {
   try {
@@ -698,6 +825,7 @@ app.get('/healthcheck', async (req, res) => {
       database: dbOk,
       login: Boolean(APP_PASSWORD && JWT_SECRET),
     },
+    cota_api_football: apiFootballQuota,
     cache_itens: cache.size,
   });
 });
