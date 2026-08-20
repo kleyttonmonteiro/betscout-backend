@@ -183,6 +183,11 @@
         <a class="link-ext" href="https://cornerprobet.com/pt" target="_blank" rel="noopener">CornerProBet ↗</a>
       </div>
 
+      <label style="margin-top:0">Cole aqui o bloco de estatísticas do site</label>
+      <textarea id="m-colar" rows="4" placeholder="No site, toque e segure sobre as estatísticas → Selecionar tudo → Copiar. Depois cole aqui." style="width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);font-size:13px;font-family:inherit;resize:vertical"></textarea>
+      <button type="button" class="btn sec" id="btn-preencher" style="margin-top:8px">Preencher campos automaticamente</button>
+      <div id="m-colar-status" style="font-size:12px;color:var(--muted);margin-top:8px;min-height:16px"></div>
+
       <form class="form-manual" id="form-manual">
         <label>Jogo (Time A x Time B)</label>
         <input type="text" id="m-jogo" placeholder="Flamengo x Palmeiras" required>
@@ -261,6 +266,51 @@
   function esconderLogin() {
     $('#login-overlay').classList.add('hide');
   }
+
+  /* ---------- Preencher automático a partir do texto colado do site ---------- */
+  // Sites como SofaScore/Flashscore mostram cada estatística em 3 linhas:
+  // valor da casa, o nome da estatística, valor de fora. A função procura
+  // esses rótulos conhecidos (em português e inglês) e lê o número de cima
+  // e de baixo de cada um.
+  const ROTULOS_COLADO = [
+    { campo: 'chutes', casaId: '#m-chutes-casa', foraId: '#m-chutes-fora',
+      rotulos: ['shots on target', 'chutes no alvo', 'remates à baliza', 'chutes a gol'] },
+    { campo: 'escanteios', casaId: '#m-esc-casa', foraId: '#m-esc-fora',
+      rotulos: ['corner kicks', 'escanteios', 'cantos', 'pontapés de canto'] },
+    { campo: 'xg', casaId: '#m-xg-casa', foraId: '#m-xg-fora',
+      rotulos: ['expected goals (xg)', 'expected goals', 'golos esperados', 'gols esperados', 'xg'] },
+    { campo: 'ataques', casaId: '#m-ap-casa', foraId: '#m-ap-fora',
+      rotulos: ['touches in opposition box', 'toques na área', 'ataques perigosos', 'dangerous attacks'] },
+  ];
+
+  function preencherDoColado() {
+    const texto = $('#m-colar').value;
+    const linhas = texto.split('\n').map(l => l.trim()).filter(Boolean);
+    let achados = 0;
+    const jaAchado = new Set();
+
+    for (let i = 1; i < linhas.length - 1; i++) {
+      const linhaAtual = linhas[i].toLowerCase();
+      for (const item of ROTULOS_COLADO) {
+        if (jaAchado.has(item.campo)) continue; // pega só a primeira ocorrência
+        if (item.rotulos.some(r => linhaAtual === r)) {
+          const casa = parseFloat(linhas[i - 1].replace('%', '').replace(',', '.'));
+          const fora = parseFloat(linhas[i + 1].replace('%', '').replace(',', '.'));
+          if (!isNaN(casa) && !isNaN(fora)) {
+            $(item.casaId).value = casa;
+            $(item.foraId).value = fora;
+            jaAchado.add(item.campo);
+            achados++;
+          }
+        }
+      }
+    }
+
+    $('#m-colar-status').textContent = achados
+      ? `${achados} de 4 campos preenchidos automaticamente. Confira os números antes de analisar.`
+      : 'Não reconheci nenhum dado nesse texto — preencha os campos manualmente.';
+  }
+  $('#btn-preencher').addEventListener('click', preencherDoColado);
 
   async function tentarLogin() {
     const senha = $('#login-senha').value;
