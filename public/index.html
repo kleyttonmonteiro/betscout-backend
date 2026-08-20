@@ -455,12 +455,29 @@
           <div class="rotulo">Invalidar sinal se</div>
           ${esc(a.invalidacao || '—')}
         </div>
-        <button class="btn sec" data-registrar="${a.fixtureId}">Registrar entrada</button>
+        <div class="form-manual" style="margin-top:4px">
+          <div class="par">
+            <div><label>Stake (R$)</label><input type="number" class="in-stake" min="0" step="0.01" placeholder="50"></div>
+            <div><label>Odd executada</label><input type="number" class="in-odd-exec" min="1" step="0.01" placeholder="${esc(a.odd_minima)}"></div>
+          </div>
+          <label>Observação (opcional)</label>
+          <input type="text" class="in-motivo" placeholder="Ex: entrei um pouco atrasado">
+          <button class="btn sec" data-registrar="${a.fixtureId}" style="margin-top:12px">Confirmar registro</button>
+        </div>
       </div>
     </div>`;
   }
 
-  async function registrarEntrada(a, btn) {
+  function lerExtras(container) {
+    return {
+      stake: container.querySelector('.in-stake')?.value || null,
+      odd_executada: container.querySelector('.in-odd-exec')?.value || null,
+      motivo: container.querySelector('.in-motivo')?.value || null,
+    };
+  }
+
+  async function registrarEntrada(a, btn, extras) {
+    extras = extras || {};
     btn.disabled = true; btn.textContent = 'Registrando…';
     try {
       await api('/api/entries', {
@@ -468,12 +485,13 @@
         body: JSON.stringify({
           fixtureId: a.fixtureId, jogo: a.jogo, minuto: a.minuto, cenario: a.cenario,
           linha: a.linha_sugerida, probabilidade: a.probabilidade, risco: a.risco,
-          odd_minima: a.odd_minima, justificativa: a.justificativa
+          odd_minima: a.odd_minima, justificativa: a.justificativa,
+          stake: extras.stake, odd_executada: extras.odd_executada, motivo: extras.motivo,
         })
       });
       btn.textContent = 'Registrada ✓';
     } catch (err) {
-      btn.disabled = false; btn.textContent = 'Registrar entrada';
+      btn.disabled = false; btn.textContent = 'Confirmar registro';
       if (err.message !== 'Não autenticado') alert('Falha ao registrar: ' + err.message);
     }
   }
@@ -500,7 +518,7 @@
 
     if (btnR) {
       const a = analises[btnR.dataset.registrar];
-      if (a) registrarEntrada(a, btnR);
+      if (a) registrarEntrada(a, btnR, lerExtras(btnR.closest('.analise')));
     }
   });
 
@@ -538,7 +556,7 @@
   });
   $('#resultado-manual').addEventListener('click', e => {
     const btnR = e.target.closest('[data-registrar]');
-    if (btnR && ultimaAnaliseManual) registrarEntrada(ultimaAnaliseManual, btnR);
+    if (btnR && ultimaAnaliseManual) registrarEntrada(ultimaAnaliseManual, btnR, lerExtras(btnR.closest('.analise')));
   });
 
   /* ---------- Entradas ---------- */
@@ -547,14 +565,20 @@
       const entradas = await api('/api/entries');
       const el = $('#lista-entradas');
       if (!entradas.length) return; // mantém estado vazio
-      el.innerHTML = entradas.map(e => `<div class="card entrada">
-        <div>
-          <div style="font-weight:700;font-size:14px">${esc(e.jogo)}</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:3px">
-            ${esc(e.linha)} · ${e.minuto}' · ${esc(e.cenario)}${e.placar_final ? ' · final ' + esc(e.placar_final) : ''}
+      el.innerHTML = entradas.map(e => `<div class="card entrada" style="flex-direction:column;align-items:stretch;gap:6px">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
+          <div>
+            <div style="font-weight:700;font-size:14px">${esc(e.jogo)}</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:3px">
+              ${esc(e.linha)} · ${e.minuto}' · ${esc(e.cenario)}${e.placar_final ? ' · final ' + esc(e.placar_final) : ''}
+            </div>
           </div>
+          <span class="badge ${esc(e.status)}">${esc(e.status)}</span>
         </div>
-        <span class="badge ${esc(e.status)}">${esc(e.status)}</span>
+        ${(e.stake || e.odd_executada) ? `<div style="font-size:12px;color:var(--muted)">
+          ${e.stake ? 'Stake R$' + esc(e.stake) : ''}${e.stake && e.odd_executada ? ' · ' : ''}${e.odd_executada ? 'Odd ' + esc(e.odd_executada) : ''}
+        </div>` : ''}
+        ${e.motivo ? `<div style="font-size:12px;color:var(--muted);font-style:italic">"${esc(e.motivo)}"</div>` : ''}
       </div>`).join('');
     } catch {}
   }
