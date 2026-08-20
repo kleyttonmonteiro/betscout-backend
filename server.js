@@ -280,18 +280,19 @@ function extractMetrics(statsResponse) {
 function buildPrompt(payload) {
   return `Você é um analista de apostas ao vivo especializado em mercados de gols (Over).
 Analise o jogo abaixo e responda SOMENTE com JSON válido, sem markdown, no formato:
-{"veredito":"ENTRAR|AGUARDAR|EVITAR","probabilidade":0-100,"risco":"BAIXO|MEDIO|ALTO","odd_minima":numero,"linha_sugerida":"texto","justificativa":"texto curto","janela":"texto curto dizendo por quanto tempo esse sinal ainda vale (ex: Próximos 8 minutos (72'-80'))","gatilho":"texto curto dizendo qual foi o principal fator estatístico que motivou esse veredito","invalidacao":"texto curto dizendo em que situação esse sinal deve ser descartado"}
+{"veredito":"ENTRAR|AGUARDAR|EVITAR","probabilidade":0-100,"risco":"BAIXO|MEDIO|ALTO","odd_minima":numero,"linha_sugerida":"escolha EXATAMENTE uma das linhas alvo listadas abaixo, sem inventar outra linha e sem adicionar comentário dentro do texto","justificativa":"texto curto","janela":"texto curto dizendo por quanto tempo esse sinal ainda vale (ex: Próximos 8 minutos (72'-80'))","gatilho":"texto curto dizendo qual foi o principal fator estatístico que motivou esse veredito","invalidacao":"texto curto dizendo em que situação esse sinal deve ser descartado"}
 
 Jogo: ${payload.home} ${payload.goalsHome} x ${payload.goalsAway} ${payload.away} — ${payload.minute}' (${payload.half}º tempo)
 Cenário: ${payload.scenario} | Favorito: ${payload.favoriteName || 'indefinido'} (odd pré ${payload.favoriteOdd || 'n/d'})
-Linhas alvo: ${payload.lines.join(' ou ')}
+Linhas alvo (escolha uma destas, exatamente como está escrito): ${payload.lines.join(' ou ')}
 Estatísticas (casa | fora):
 - Chutes no gol: ${payload.metrics.home.chutes_no_gol} | ${payload.metrics.away.chutes_no_gol}
 - Chutes totais: ${payload.metrics.home.chutes_total} | ${payload.metrics.away.chutes_total}
 - Ataques perigosos: ${payload.metrics.home.ataques_perigosos} | ${payload.metrics.away.ataques_perigosos}
 - Escanteios: ${payload.metrics.home.escanteios} | ${payload.metrics.away.escanteios}
 - Posse: ${payload.metrics.home.posse}% | ${payload.metrics.away.posse}%
-Considere ritmo por minuto, pressão do favorito e a linha de gols acima do gol seguinte.`;
+Considere ritmo por minuto, pressão do favorito e a linha de gols acima do gol seguinte.
+Se o veredito for AGUARDAR ou EVITAR, ainda assim escolha linha_sugerida entre as linhas alvo listadas — não invente uma linha diferente (nunca sugira Over 0.5 ou qualquer linha fora da lista).`;
 }
 
 async function callAnthropic(prompt) {
@@ -616,6 +617,10 @@ app.post('/api/analyze', async (req, res, next) => {
       analysis.janela = analysis.janela || 'Não informado';
       analysis.gatilho = analysis.gatilho || analysis.justificativa || 'Não informado';
       analysis.invalidacao = analysis.invalidacao || 'Reavalie se a pressão cair nos próximos minutos.';
+      // Trava extra: se a IA inventar uma linha fora da lista permitida, corrige sozinho.
+      if (!payload.lines.includes(analysis.linha_sugerida)) {
+        analysis.linha_sugerida = payload.lines[0];
+      }
     } else {
       // Score já é claro o suficiente: responde sem gastar IA nenhuma
       analysis = {
@@ -675,6 +680,10 @@ app.get('/api/test-analyze', async (req, res, next) => {
       analysis.janela = analysis.janela || 'Não informado';
       analysis.gatilho = analysis.gatilho || analysis.justificativa || 'Não informado';
       analysis.invalidacao = analysis.invalidacao || 'Reavalie se a pressão cair nos próximos minutos.';
+      // Trava extra: se a IA inventar uma linha fora da lista permitida, corrige sozinho.
+      if (!payload.lines.includes(analysis.linha_sugerida)) {
+        analysis.linha_sugerida = payload.lines[0];
+      }
     } else {
       analysis = {
         provedor: 'motor_proprio',
@@ -759,6 +768,10 @@ app.post('/api/analyze-manual', async (req, res, next) => {
       analysis.janela = analysis.janela || 'Não informado';
       analysis.gatilho = analysis.gatilho || analysis.justificativa || 'Não informado';
       analysis.invalidacao = analysis.invalidacao || 'Reavalie se a pressão cair nos próximos minutos.';
+      // Trava extra: se a IA inventar uma linha fora da lista permitida, corrige sozinho.
+      if (!payload.lines.includes(analysis.linha_sugerida)) {
+        analysis.linha_sugerida = payload.lines[0];
+      }
     } else {
       analysis = {
         provedor: 'motor_proprio',
