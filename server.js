@@ -55,6 +55,11 @@
    O frontend mostra um aviso e libera a aba "Manual", onde dá pra digitar
    os números do jogo (vistos em outro site) e rodar a mesma análise de
    sempre — /api/analyze-manual usa as mesmas regras de cenário/motor/IA.
+
+   ATUALIZAÇÃO 10 (Fase 5): registrar entrada agora também salva stake,
+   odd_executada e motivo (as colunas já existiam na tabela trades desde o
+   começo, só não eram preenchidas). O frontend pede esses 3 campos antes
+   de confirmar o registro.
    ==========================================================================*/
 
 /* == 01. IMPORTS E CONFIGURAÇÃO INICIAL ================================== */
@@ -402,6 +407,9 @@ function rowToEntry(r) {
     justificativa: r.justificativa,
     placar_final: r.placar_final,
     resolvido_em: r.resolvido_em,
+    stake: r.stake,
+    odd_executada: r.odd_executada,
+    motivo: r.motivo,
   };
 }
 
@@ -414,11 +422,12 @@ async function loadEntries() {
 async function saveEntry(entry) {
   await pool.query(
     `INSERT INTO trades
-       (id, fixture_id, jogo, minuto, cenario, linha, probabilidade, risco, odd_minima, justificativa, status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+       (id, fixture_id, jogo, minuto, cenario, linha, probabilidade, risco, odd_minima, justificativa, status, stake, odd_executada, motivo)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
     [
       entry.id, entry.fixtureId, entry.jogo, entry.minuto, entry.cenario, entry.linha,
       entry.probabilidade, entry.risco, entry.odd_minima, entry.justificativa, entry.status,
+      entry.stake, entry.odd_executada, entry.motivo,
     ]
   );
 }
@@ -765,7 +774,7 @@ app.post('/api/analyze-manual', async (req, res, next) => {
       };
     }
 
-    const fixtureIdFalso = -Date.now(); // negativo: nunca colide com um ID real da API-Football
+    const fixtureIdFalso = -(Date.now() % 2000000000); // negativo e dentro do limite do INTEGER do banco
     res.json({
       fixtureId: fixtureIdFalso,
       manual: true,
@@ -790,6 +799,9 @@ app.post('/api/entries', async (req, res, next) => {
       cenario: b.cenario || '', linha: b.linha,
       probabilidade: b.probabilidade ?? null, risco: b.risco || '',
       odd_minima: b.odd_minima ?? null, justificativa: b.justificativa || '',
+      stake: b.stake ? Number(b.stake) : null,
+      odd_executada: b.odd_executada ? Number(b.odd_executada) : null,
+      motivo: b.motivo || null,
     };
     await saveEntry(entry);
     res.status(201).json({ entrada: entry });
