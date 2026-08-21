@@ -183,8 +183,8 @@
         <a class="link-ext" href="https://cornerprobet.com/pt" target="_blank" rel="noopener">CornerProBet ↗</a>
       </div>
 
-      <label style="margin-top:0">Cole aqui o bloco de estatísticas do site</label>
-      <textarea id="m-colar" rows="4" placeholder="No site, toque e segure sobre as estatísticas → Selecionar tudo → Copiar. Depois cole aqui." style="width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);font-size:13px;font-family:inherit;resize:vertical"></textarea>
+      <label style="margin-top:0">Cole aqui o conteúdo da página do jogo (quanto mais texto, melhor)</label>
+      <textarea id="m-colar" rows="4" placeholder="No site, toque e segure → Selecionar tudo → Copiar (pode copiar a página inteira, com título e estatísticas). Depois cole aqui." style="width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);font-size:13px;font-family:inherit;resize:vertical"></textarea>
       <button type="button" class="btn sec" id="btn-preencher" style="margin-top:8px">Preencher campos automaticamente</button>
       <div id="m-colar-status" style="font-size:12px;color:var(--muted);margin-top:8px;min-height:16px"></div>
 
@@ -283,6 +283,20 @@
       rotulos: ['touches in opposition box', 'toques na área', 'ataques perigosos', 'dangerous attacks'] },
   ];
 
+  // Tenta reconhecer também o nome dos times, o placar e o minuto, a partir
+  // do título da página e do bloco de placar que normalmente vêm junto
+  // quando você copia a página inteira (não só a seção de estatísticas).
+  function extrairJogoEPlacar(texto) {
+    const resultado = {};
+    const mTitulo = texto.match(/([\wÀ-ÿ.\- ]{2,40}?)\s+vs\.?\s+([\wÀ-ÿ.\- ]{2,40}?)\s+live score/i);
+    if (mTitulo) resultado.jogo = `${mTitulo[1].trim()} x ${mTitulo[2].trim()}`;
+    const mPlacar = texto.match(/(\d{1,2})\s*-\s*(\d{1,2})/);
+    if (mPlacar) { resultado.placarCasa = mPlacar[1]; resultado.placarFora = mPlacar[2]; }
+    const mMinuto = texto.match(/\b(\d{1,3}):(\d{2})\b/);
+    if (mMinuto) resultado.minuto = mMinuto[1];
+    return resultado;
+  }
+
   function preencherDoColado() {
     const texto = $('#m-colar').value;
     const linhas = texto.split('\n').map(l => l.trim()).filter(Boolean);
@@ -306,8 +320,14 @@
       }
     }
 
+    const extra = extrairJogoEPlacar(texto);
+    if (extra.jogo) { $('#m-jogo').value = extra.jogo; achados++; }
+    if (extra.minuto) { $('#m-minuto').value = extra.minuto; achados++; }
+    if (extra.placarCasa !== undefined) { $('#m-placar-casa').value = extra.placarCasa; achados++; }
+    if (extra.placarFora !== undefined) { $('#m-placar-fora').value = extra.placarFora; achados++; }
+
     $('#m-colar-status').textContent = achados
-      ? `${achados} de 4 campos preenchidos automaticamente. Confira os números antes de analisar.`
+      ? `${achados} de 8 campos preenchidos automaticamente. Confira os números antes de analisar (o favorito e a odd continuam manuais).`
       : 'Não reconheci nenhum dado nesse texto — preencha os campos manualmente.';
   }
   $('#btn-preencher').addEventListener('click', preencherDoColado);
@@ -342,7 +362,14 @@
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 'tab-' + b.dataset.tab));
     if (b.dataset.tab === 'entradas') carregarEntradas();
     if (b.dataset.tab === 'log') carregarLog();
+    history.replaceState(null, '', '#' + b.dataset.tab);
   }));
+
+  function abrirAbaPorLink() {
+    const aba = location.hash.replace('#', '');
+    const botao = document.querySelector(`nav button[data-tab="${aba}"]`);
+    if (botao) botao.click();
+  }
 
   /* ---------- Utilitários ---------- */
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -376,7 +403,10 @@
 
   function atualizarQuota(quota) {
     const el = $('#quota-aviso');
-    if (quota && quota.esgotada) {
+    if (quota && quota.esgotada && quota.motivo === 'conta_suspensa') {
+      el.classList.add('on');
+      el.innerHTML = '<b>Sua conta da API-Football foi suspensa.</b> Acesse <a href="https://dashboard.api-football.com" target="_blank" rel="noopener">dashboard.api-football.com</a> pra ver o motivo e reativar. Enquanto isso, use a aba <a data-ir-manual>Manual</a>.';
+    } else if (quota && quota.esgotada) {
       el.classList.add('on');
       el.innerHTML = '<b>Cota diária da API-Football esgotada.</b> Os jogos ao vivo não atualizam até renovar (geralmente à meia-noite UTC). Use a aba <a data-ir-manual>Manual</a> pra continuar analisando com dados digitados.';
     } else {
@@ -606,6 +636,7 @@
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) carregarJogos(true); // volta ao app → atualiza
     });
+    abrirAbaPorLink();
   }
 
   // Só carrega dados se já tiver um token guardado; senão, mostra a tela de senha.
